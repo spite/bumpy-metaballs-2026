@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Bumpy Metaballs</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <meta
+      name="description"
+      content="Bumpy Metaballs | Isosurface with Marching Cubes, bump mapping with normal mapping and triplanar mapping, shading with a MatCap shader."
+    />
+    <meta property="og:type" content="website" />
+    <meta
+      property="og:url"
+      content="https://www.clicktorelease.com/code/bumpy-metaballs"
+    />
+    <meta property="og:title" content="Bumpy Metaballs" />
+    <meta
+      property="og:description"
+      content="Bumpy Metaballs | Isosurface with Marching Cubes, bump mapping with normal mapping and triplanar mapping, shading with a MatCap shader."
+    />
+    <meta
+      property="og:image"
+      content="https://www.clicktorelease.com/code/bumpy-metaballs/assets/thumb.jpg"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <link
+      rel="stylesheet"
+      type="text/css"
+      href="third_party/guspira.css"
+      media="all"
+    />
+    <link rel="stylesheet" type="text/css" href="css/styles.css" media="all" />
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "./third_party/three.module.min.js",
+          "guspira": "./third_party/guspira.js",
+          "three/": "./third_party/",
+          "third_party/": "./third_party/",
+          "modules/": "./modules/",
+          "shaders/": "./shaders/"
+        }
+      }
+    </script>
+    <script type="module" src="main.js"></script>
+  </head>
+  <body>
+    <div id="container"></div>
+    <div id="panel"></div>
+
+    <div id="options">
+      <p>
+        <b>Bumpy Metaballs</b> | Drag to rotate, scroll to zoom, space to
+        pause, R to randomize.
+        <a class="button" href="#" id="fullscreenBtn">Go fullscreen</a>
+      </p>
+    </div>
+
+    <div id="switch">
+      <p>
+        Grossed out? <b>There are more materials!</b><br />
+        <a href="#" id="switchMaterial" class="button">Try another one!</a>
+      </p>
+    </div>
+
+    <div id="intro">
+      <p>
+        <b>Isosurface</b> created with <b>Marching Cubes</b>, and bump added with
+        normal mapping.
+      </p>
+      <p>
+        The metaballs don't have generated UV coordinates, and tangents can't be
+        calculated with the usual method because it relies on texture
+        coordinates.
+      </p>
+      <p>
+        The triplanar mapping explained in this
+        <a
+          href="https://developer.nvidia.com/gpugems/gpugems3/part-i-geometry/chapter-1-generating-complex-procedural-terrains-using-gpu"
+          target="_blank"
+          rel="noopener noreferrer"
+          >GPU Gems 3 article</a
+        >
+        supplies them instead: each of the three projections carries its own
+        tangent frame, so the normal map can be applied in the fragment shader
+        with no UVs at all.
+      </p>
+      <p>
+        Shading is the same MatCap as
+        <a
+          href="https://www.clicktorelease.com/code/spherical-normal-mapping/"
+          target="_blank"
+          rel="noopener noreferrer"
+          >Spherical Environment Mapping</a
+        >, now with ambient occlusion, bloom and chromatic aberration on top.
+      </p>
+      <p>
+        Code by Jaume Sánchez
+        <a
+          href="https://www.twitter.com/thespite"
+          target="_blank"
+          rel="noopener noreferrer"
+          >@thespite</a
+        >
+        using
+        <a href="https://threejs.org" target="_blank" rel="noopener noreferrer"
+          >three.js</a
+        >.
+      </p>
+    </div>
+  </body>
+</html>

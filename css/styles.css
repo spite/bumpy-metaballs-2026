@@ -1,0 +1,121 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  color: #eee;
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.4em;
+  text-shadow: 0 -1px 0 rgba(0, 0, 0, 0.5);
+  background-color: #000;
+  overflow: hidden;
+}
+
+#container {
+  position: absolute;
+  inset: 0;
+  touch-action: none;
+}
+
+#container canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+a {
+  color: white;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+#panel {
+  position: fixed;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+  right: 10px;
+  z-index: 2;
+  width: 320px;
+  max-width: calc(100vw - 20px);
+}
+
+#options,
+#switch,
+#intro {
+  position: absolute;
+  z-index: 1;
+  max-width: min(40em, calc(100vw - 20px));
+}
+
+#options {
+  left: 10px;
+  top: calc(10px + env(safe-area-inset-top, 0px));
+}
+
+#switch {
+  right: 10px;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  text-align: right;
+}
+
+#intro {
+  left: 10px;
+  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+}
+
+#intro p {
+  margin-top: 0.7em;
+}
+
+.button {
+  display: inline-block;
+  padding: 7px 9px;
+  border: 1px solid #cacaca;
+  border-radius: 2px;
+  background: #ececec;
+  color: #3c3c3d;
+  font: inherit;
+  text-shadow: 1px 1px 0 #fff;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.button:hover {
+  border-color: #388ad4;
+  background-color: #2d7dc5;
+  color: #fff;
+  text-shadow: -1px -1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.button:active {
+  border-color: #911d1b;
+  background-color: #0f5ea2;
+  color: #fff;
+  text-shadow: none;
+}
+
+.button:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+
+@media (max-width: 600px) {
+  #intro {
+    display: none;
+  }
+
+  #switch {
+    left: 10px;
+    right: auto;
+    text-align: left;
+  }
+
+  #panel {
+    width: auto;
+    left: 10px;
+    right: 10px;
+  }
+}
