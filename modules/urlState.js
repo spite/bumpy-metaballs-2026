@@ -267,13 +267,11 @@ function syncUrl(app, interval = 500) {
   };
 }
 
-// A link preset has to name every field in the table. Any it leaves out is
-// not reset when the preset is selected, so it silently keeps whatever the
-// previous look put there. Two presets had exactly that hole once four fields
-// were added after they were written, which is why this is a check and not a
-// convention.
+// A link preset has to name every field but mat, or selecting it keeps whatever
+// the previous look left in the missing ones.
 function auditPresets(app) {
-  const expected = Object.keys(schema(app));
+  const expected = Object.keys(schema(app)).filter((key) => key !== "mat");
+  const names = new Set(presets.map((preset) => preset.name.toLowerCase()));
   const problems = [];
 
   for (const preset of presets) {
@@ -285,10 +283,12 @@ function auditPresets(app) {
       problems.push(`${preset.name} is missing ${missing.join(", ")}`);
     }
 
-    // The base it names is no longer a fault either way: a name that is not a
-    // block preset's is dropped and the defaults stand in, which is what a url
-    // copied from the address bar always needs, since that url names whichever
-    // preset was selected at the time.
+    // A link preset is a valid name here: a url copied from the address bar
+    // names whichever preset was selected.
+    const base = fields.get("mat");
+    if (base !== null && !names.has(base.toLowerCase())) {
+      problems.push(`${preset.name} names mat=${base}, which is not a preset`);
+    }
   }
 
   return problems;

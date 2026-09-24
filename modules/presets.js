@@ -154,11 +154,11 @@ const presets = [
   },
   {
     name: "Blue glass",
-    url: "mat=porcelain&trans=1&res=50&cres=50&blobson=1&blobs=20&iso=80&speed=1&smooth=0&shape=box&ssize=0.16&sthick=0.055&onrgh=0&onmet=0&env=sunrise&envi=1.15&term=off&wire=0&dbg=off&dbgs=1&onmap=organic&onrm=0&otex=1&otint=ffffff&oalb=0.2&ospec=1&sss=0&scrn=0&sky=c2ddff&gnd=005ebd&inrgh=0.94&inmet=0&inmap=crinkle&inrm=0.3&intex=1&inalb=1&inspec=0.23&insss=1&inscrn=0&intint=1a4fcd&corelv=80&oabs=2465ff&thick=1.39&refr=0.3&disp=0.21&iblur=6&scat=0.2&dens=0.5&rim=1&refl=0.5&gloss=0&indens=5&farwall=1&aostr=2&aorad=40&aobias=0.05&aonear=1&aofar=4&aocol=06070b&aocore=0&bloom=0.3&bloomr=0.5&bloomt=0.35&ab=16&vig=0.4&grain=0.02&dith=1&aces=1&expo=1&fxaa=1",
+    url: "trans=1&res=50&cres=50&blobson=1&blobs=20&iso=80&speed=1&smooth=0&shape=box&ssize=0.16&sthick=0.055&onrgh=0&onmet=0&env=sunrise&envi=1.15&term=off&wire=0&dbg=off&dbgs=1&onmap=organic&onrm=0&otex=1&otint=ffffff&oalb=0.2&ospec=1&sss=0&scrn=0&sky=c2ddff&gnd=005ebd&inrgh=0.94&inmet=0&inmap=crinkle&inrm=0.3&intex=1&inalb=1&inspec=0.23&insss=1&inscrn=0&intint=1a4fcd&corelv=80&oabs=2465ff&thick=1.39&refr=0.3&disp=0.21&iblur=6&scat=0.2&dens=0.5&rim=1&refl=0.5&gloss=0&indens=5&farwall=1&aostr=2&aorad=40&aobias=0.05&aonear=1&aofar=4&aocol=06070b&aocore=0&bloom=0.3&bloomr=0.5&bloomt=0.35&ab=16&vig=0.4&grain=0.02&dith=1&aces=1&expo=1&fxaa=1",
   },
   {
     name: "Breakfast",
-    url: "mat=porcelain&trans=1&res=50&cres=50&blobson=1&blobs=40&iso=38&speed=1&smooth=0.55&shape=box&ssize=0.195&sthick=0.055&onrgh=0&onmet=0&env=studio&envi=1.15&term=off&wire=0&dbg=off&dbgs=1&onmap=crinkle&onrm=0.56&otex=1&otint=ffffff&oalb=0.2&ospec=0&sss=0&scrn=0&sky=ffffff&gnd=b07003&inrgh=0&inmet=0&inmap=crinkle&inrm=0&intex=2.8&inalb=1&inspec=1&insss=1&inscrn=1&intint=8a5000&corelv=95&oabs=fefce1&thick=0.94&refr=0.08&disp=0.31&iblur=9.6&scat=1.2&dens=1.5&rim=0&refl=0&gloss=0&indens=5&farwall=0&aostr=2&aorad=40&aobias=0.05&aonear=1&aofar=4&aocol=06070b&aocore=0&bloom=0.3&bloomr=0.5&bloomt=0.35&ab=16&vig=0.4&grain=0.02&dith=1&aces=1&expo=1&fxaa=1",
+    url: "trans=1&res=50&cres=50&blobson=1&blobs=40&iso=38&speed=1&smooth=0.55&shape=box&ssize=0.195&sthick=0.055&onrgh=0&onmet=0&env=studio&envi=1.15&term=off&wire=0&dbg=off&dbgs=1&onmap=crinkle&onrm=0.56&otex=1&otint=ffffff&oalb=0.2&ospec=0&sss=0&scrn=0&sky=ffffff&gnd=b07003&inrgh=0&inmet=0&inmap=crinkle&inrm=0&intex=2.8&inalb=1&inspec=1&insss=1&inscrn=1&intint=8a5000&corelv=95&oabs=fefce1&thick=0.94&refr=0.08&disp=0.31&iblur=9.6&scat=1.2&dens=1.5&rim=0&refl=0&gloss=0&indens=5&farwall=0&aostr=2&aorad=40&aobias=0.05&aonear=1&aofar=4&aocol=06070b&aocore=0&bloom=0.3&bloomr=0.5&bloomt=0.35&ab=16&vig=0.4&grain=0.02&dith=1&aces=1&expo=1&fxaa=1",
   },
   {
     name: "new flesh",
