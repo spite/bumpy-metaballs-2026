@@ -153,8 +153,8 @@ const presets = [
     url: "mat=flesh&trans=1&res=50&cres=50&blobson=1&blobs=21&iso=80&speed=1&smooth=0&shape=torus&ssize=0.34&sthick=0.055&onrgh=0&onmet=0.29&env=studio&envi=1&term=off&wire=0&dbg=off&dbgs=1&onmap=tread&onrm=1.27&otex=7&otint=b000b3&oalb=0.86&ospec=0.24&sss=0.12&scrn=0.81&sky=8589ff&gnd=b63593&inrgh=0.26&inmet=0&inmap=cracked&inrm=0.26&intex=2.8&inalb=1&inspec=1&insss=1&inscrn=0&intint=7e47ff&corelv=216&oabs=db95cb&thick=0.34&refr=0.35&disp=0.19&iblur=11.6&scat=0&dens=1.4&rim=0.41&refl=0.52&gloss=0.32&indens=1.8&farwall=0&aostr=3&aorad=40&aobias=0.05&aonear=1&aofar=4&aocol=06070b&aocore=1&bloom=0.35&bloomr=0.5&bloomt=0.35&ab=6&vig=0.35&grain=0.05&dith=1&aces=1&expo=1&fxaa=1",
   },
   {
-    name: "porcelain",
-    url: "mat=amoeba&trans=1&res=50&cres=50&blobson=1&blobs=40&iso=38&speed=1&smooth=0.55&shape=none&ssize=0.195&sthick=0.055&onrgh=0&onmet=0&env=studio&envi=1.15&term=off&wire=0&dbg=off&dbgs=1&onmap=organic&onrm=0&otex=10&otint=ffffff&oalb=0.2&ospec=1&sss=0&scrn=0&sky=8299b5&gnd=c9cdd1&inrgh=0.6&inmet=0&inmap=organic&inrm=0&intex=10&inalb=1&inspec=0.25&insss=0&inscrn=0&intint=1a4fcd&corelv=95&oabs=ffffff&thick=0.55&refr=0.35&disp=0.15&iblur=2&scat=0.2&dens=0.5&rim=1&refl=0.5&gloss=0&indens=5&farwall=0&aostr=2&aorad=40&aobias=0.05&aonear=1&aofar=4&aocol=06070b&aocore=0&bloom=0.3&bloomr=0.5&bloomt=0.35&ab=16&vig=0.4&grain=0.02&dith=1&aces=1&expo=1&fxaa=1",
+    name: "Blue glass",
+    url: "mat=porcelain&trans=1&res=50&cres=50&blobson=1&blobs=20&iso=80&speed=1&smooth=0&shape=box&ssize=0.16&sthick=0.055&onrgh=0&onmet=0&env=sunrise&envi=1.15&term=off&wire=0&dbg=off&dbgs=1&onmap=organic&onrm=0&otex=1&otint=ffffff&oalb=0.2&ospec=1&sss=0&scrn=0&sky=c2ddff&gnd=005ebd&inrgh=0.94&inmet=0&inmap=crinkle&inrm=0.3&intex=1&inalb=1&inspec=0.23&insss=1&inscrn=0&intint=1a4fcd&corelv=80&oabs=2465ff&thick=1.39&refr=0.3&disp=0.21&iblur=6&scat=0.2&dens=0.5&rim=1&refl=0.5&gloss=0&indens=5&farwall=1&aostr=2&aorad=40&aobias=0.05&aonear=1&aofar=4&aocol=06070b&aocore=0&bloom=0.3&bloomr=0.5&bloomt=0.35&ab=16&vig=0.4&grain=0.02&dith=1&aces=1&expo=1&fxaa=1",
   },
   {
     name: "Breakfast",
