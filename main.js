@@ -21,6 +21,7 @@ import { RGBELoader } from "third_party/RGBELoader.js";
 import { environmentLight } from "modules/sh.js";
 import { Volume } from "modules/volume.js";
 import { MarchGeometry, makeTriTableTexture } from "modules/MarchGeometry.js";
+import { HistoPyramid } from "modules/HistoPyramid.js";
 import { shader as marchVs } from "shaders/marchVs.js";
 import { OrbitControls } from "third_party/OrbitControls.js";
 import { Pipeline } from "modules/Pipeline.js";
@@ -76,6 +77,7 @@ const twistAxis = new Vector3(0, 0, 1);
 const TRANSMISSION_LAYER = 1;
 
 let dirty = true;
+let twisted = false;
 
 const container = document.querySelector("#container");
 
@@ -204,16 +206,16 @@ function loadTexture(url, wrapping) {
 // Isosurface
 
 const triTableTexture = makeTriTableTexture();
-const marchGeometry = new MarchGeometry(state.resolution);
-const coreMarchGeometry = new MarchGeometry(state.resolution);
+const marchGeometry = new MarchGeometry();
+const coreMarchGeometry = new MarchGeometry();
+const shellPyramid = new HistoPyramid(triTableTexture);
+const corePyramid = new HistoPyramid(triTableTexture);
 
 function createSurfaceMaterial({ march = false } = {}) {
   return new RawShaderMaterial({
     uniforms: {
       fieldTexture: { value: null },
-      indexTexture: { value: null },
-      indexChannel: { value: 0 },
-      indexGrid: { value: state.resolution },
+      ...HistoPyramid.uniforms(),
       triTableTexture: { value: triTableTexture },
       gridSize: { value: state.resolution },
       isolation: { value: state.isolation },
@@ -275,12 +277,6 @@ function coreFieldResolution() {
   return state.coreResolution;
 }
 
-function syncCoreGeometry() {
-  coreMarchGeometry.setSize(coreFieldResolution());
-  dirty = true;
-}
-
-syncCoreGeometry();
 
 
 
@@ -462,7 +458,6 @@ function setTwistRadius(value) {
 function setCoreIsolation(value) {
   state.coreIsolation = Math.max(value, state.isolation);
   dirty = true;
-  syncCoreGeometry();
   if (panel) panel.sync();
 }
 
@@ -596,14 +591,12 @@ function setResolution(value) {
   if (linked) state.coreResolution = value;
   dirty = true;
 
-  syncCoreGeometry();
   if (panel) panel.sync();
 }
 
 function setCoreResolution(value) {
   state.coreResolution = value;
   dirty = true;
-  syncCoreGeometry();
   if (panel) panel.sync();
 }
 
@@ -615,7 +608,6 @@ function setIsolation(value) {
   state.coreIsolation = Math.max(state.coreIsolation, value);
 
   dirty = true;
-  syncCoreGeometry();
   if (panel) panel.sync();
 }
 
@@ -763,7 +755,7 @@ resize();
     twistCenter.copy(hit).multiplyScalar(0.5).addScalar(0.5);
     twistAxis.copy(forward);
 
-    if (state.twistStrength !== 0) dirty = true;
+    if (state.twistStrength !== 0) twisted = true;
   };
 
   renderer.domElement.addEventListener("pointermove", move);
@@ -786,6 +778,15 @@ function render() {
 
   // Holding `last` current keeps the animation from jumping by the length of
   // the pause.
+  // Anything but the clock can reshape the surface by more than the pyramid's
+  // margin in one frame.
+  const edited = dirty;
+
+  if (twisted) {
+    twisted = false;
+    dirty = true;
+  }
+
   if (!state.paused) {
     time += 0.0005 * state.speed * elapsed;
     dirty = true;
@@ -807,7 +808,6 @@ function render() {
       shapeSize: state.shapeSize,
       shapeThickness: state.shapeThickness,
       isolation: state.isolation,
-      coreIsolation: state.coreIsolation,
       smoothing: state.smoothing,
       twistCenter,
       twistAxis,
@@ -820,24 +820,24 @@ function render() {
     fieldMs = polyStart - fieldStart;
 
     {
-      marchGeometry.setSize(state.resolution);
+      shellPyramid.setGrid(state.resolution);
+      if (edited) shellPyramid.invalidate();
+      shellPyramid.build(renderer, volume.fieldTexture, state.isolation);
+      shellPyramid.bind(material.uniforms);
       material.uniforms.gridSize.value = state.resolution;
       material.uniforms.isolation.value = state.isolation;
-
       material.uniforms.fieldTexture.value = volume.fieldTexture;
-      material.uniforms.indexTexture.value = volume.caseTexture;
-      material.uniforms.indexChannel.value = 0;
-      material.uniforms.indexGrid.value = volume.size;
 
-      const coreRes = coreFieldResolution();
-      coreMarchGeometry.setSize(coreRes);
-      coreMaterial.uniforms.gridSize.value = coreRes;
-      coreMaterial.uniforms.isolation.value = state.coreIsolation;
-
-      coreMaterial.uniforms.fieldTexture.value = volume.fieldTexture;
-      coreMaterial.uniforms.indexTexture.value = volume.caseTexture;
-      coreMaterial.uniforms.indexChannel.value = 1;
-      coreMaterial.uniforms.indexGrid.value = volume.size;
+      if (core.visible) {
+        const coreRes = coreFieldResolution();
+        corePyramid.setGrid(coreRes);
+        if (edited) corePyramid.invalidate();
+        corePyramid.build(renderer, volume.fieldTexture, state.coreIsolation);
+        corePyramid.bind(coreMaterial.uniforms);
+        coreMaterial.uniforms.gridSize.value = coreRes;
+        coreMaterial.uniforms.isolation.value = state.coreIsolation;
+        coreMaterial.uniforms.fieldTexture.value = volume.fieldTexture;
+      }
     }
 
     gpuTimer.end();
@@ -846,6 +846,11 @@ function render() {
 
     polyMs = performance.now() - polyStart;
   }
+
+  shellPyramid.poll();
+  corePyramid.poll();
+  marchGeometry.setVertexCount(shellPyramid.vertexBudget);
+  coreMarchGeometry.setVertexCount(core.visible ? corePyramid.vertexBudget : 0);
 
   controls.update();
   writeUrl(now);
@@ -871,7 +876,7 @@ function render() {
   stats.gpuBloom.sample(gpuTimer.take("bloom"));
   stats.gpuGrade.sample(gpuTimer.take("grade"));
 
-  stats.coreGrid.sample(coreMarchGeometry.size);
+  stats.coreGrid.sample(coreFieldResolution());
   stats.triangles.sample(renderer.info.render.triangles);
   stats.calls.sample(renderer.info.render.calls);
   stats.geometries.sample(renderer.info.memory.geometries);

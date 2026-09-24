@@ -1,15 +1,11 @@
-// Marching cubes in the vertex shader: one instance per voxel of fifteen
-// vertices, each working out from gl_InstanceID and gl_VertexID which voxel
-// and corner it is. Instanced rather than one run of size^3 * 15, because a
-// run that long needs a position attribute of the same length to be drawn at
-// all: 22MB of zeroes at a grid of 50.
-import { field } from "shaders/field.js";
+// Marching cubes in the vertex shader. Each vertex of the surface finds its
+// voxel and its slot within that voxel's triangles in modules/HistoPyramid.js,
+// so the draw is as long as the surface rather than the grid.
+import { pyramidTraversal } from "modules/HistoPyramid.js";
+import { VERTICES_PER_INSTANCE } from "modules/MarchGeometry.js";
 
 const sampleStored = `
 uniform sampler3D fieldTexture;
-uniform sampler3D indexTexture;
-uniform float indexChannel;
-uniform float indexGrid;
 
 float sampleField(vec3 voxel) {
   return textureLod(fieldTexture, (voxel + 0.5) / gridSize, 0.0).r;
@@ -31,6 +27,7 @@ uniform float gridSize;
 uniform float isolation;
 
 ${sampleStored}
+${pyramidTraversal}
 
 out vec3 vNormal;
 out vec3 vObjectNormal;
@@ -70,48 +67,17 @@ void discardVertex() {
 }
 
 void main() {
-  int size = int(gridSize);
+  ivec3 voxel;
+  int cubeIndex;
+  int slot;
 
-  int voxel = gl_InstanceID;
-  int corner = gl_VertexID;
-
-  int z = voxel / (size * size);
-  int rest = voxel - z * size * size;
-  int y = rest / size;
-  int x = rest - y * size;
-
-  // The last cell on each axis has no neighbour to form a cube with.
-  if (x >= size - 1 || y >= size - 1 || z >= size - 1) {
+  if (!locate(gl_InstanceID * ${VERTICES_PER_INSTANCE} + gl_VertexID, voxel, cubeIndex, slot)) {
     discardVertex();
     return;
   }
 
-  vec3 base = vec3(float(x), float(y), float(z));
-
-  int cubeIndex = 0;
-
-  // One fetch, not eight, from the prepass. The core marches the same volume at
-  // a coarser grid and has to do it the long way, because the prepass indices
-  // are per voxel of the finer one.
-  if (abs(gridSize - indexGrid) < 0.5) {
-    vec2 cases = texelFetch(indexTexture, ivec3(x, y, z), 0).rg;
-    cubeIndex = int(indexChannel < 0.5 ? cases.r : cases.g);
-  } else {
-    for (int i = 0; i < 8; i++) {
-      if (sampleField(base + cornerOffset(i)) < isolation) cubeIndex |= (1 << i);
-    }
-  }
-
-  if (cubeIndex == 0 || cubeIndex == 255) {
-    discardVertex();
-    return;
-  }
-
-  int edge = texelFetch(triTableTexture, ivec2(corner, cubeIndex), 0).r;
-  if (edge == -1) {
-    discardVertex();
-    return;
-  }
+  vec3 base = vec3(voxel);
+  int edge = texelFetch(triTableTexture, ivec2(slot, cubeIndex), 0).r;
 
   int a = edgeCorners[edge].x;
   int b = edgeCorners[edge].y;
