@@ -26,9 +26,17 @@ import { OrbitControls } from "third_party/OrbitControls.js";
 import { Pipeline } from "modules/Pipeline.js";
 import { BLUE_NOISE_SIZE, blueNoiseTexture } from "modules/blueNoiseTexture.js";
 import { shapeNames } from "modules/sdf.js";
+import { loadMeshField } from "modules/meshField.js";
 import { environments, normalMaps, presets } from "modules/presets.js";
 import { buildPanel } from "modules/panel.js";
-import { apply, auditPresets, readUrl, serialize, syncUrl } from "modules/urlState.js";
+import {
+  GEOMETRY_FIELDS,
+  apply,
+  auditPresets,
+  readUrl,
+  serialize,
+  syncUrl,
+} from "modules/urlState.js";
 import { stats } from "modules/stats.js";
 import { GpuTimer } from "modules/gpuTimer.js";
 import { shader as surfaceFs } from "shaders/surfaceFs.js";
@@ -59,6 +67,7 @@ const state = {
   innerNormalMap: normalMaps[0].name,
   twistStrength: 0,
   twistRadius: 0.28,
+  wireframe: false,
 };
 
 const twistCenter = new Vector3(0.5, 0.5, 0.5);
@@ -349,7 +358,7 @@ function applyPreset(index) {
     if (applyingPreset) return;
     applyingPreset = true;
     try {
-      apply(app, linkBase(preset));
+      apply(app, linkBase(preset), { keep: GEOMETRY_FIELDS });
     } finally {
       applyingPreset = false;
     }
@@ -358,7 +367,7 @@ function applyPreset(index) {
     return;
   }
 
-  apply(app, pristine);
+  apply(app, pristine, { keep: GEOMETRY_FIELDS });
 
   const uniforms = material.uniforms;
   uniforms.normalMap.value = loadTexture(preset.normalMap, RepeatWrapping);
@@ -429,6 +438,13 @@ function setTransmission(amount) {
   // Disabled states are decided in sync, not per frame, so a setter that gates
   // another row has to call it.
   if (panel) panel.sync();
+}
+
+function setWireframe(value) {
+  state.wireframe = value;
+  material.wireframe = value;
+  coreMaterial.wireframe = value;
+  dirty = true;
 }
 
 function setTwistStrength(value) {
@@ -519,8 +535,25 @@ function setSmoothing(value) {
   dirty = true;
 }
 
+let modelSDF = null;
+let modelPending = null;
+
+function ensureModelField() {
+  if (modelSDF || modelPending) return;
+  modelPending = loadMeshField("assets/suzanne.obj")
+    .then((texture) => {
+      modelSDF = texture;
+      dirty = true;
+    })
+    .catch((error) => {
+      console.error("model field failed", error);
+      modelPending = null;
+    });
+}
+
 function setShape(name) {
   state.shape = shapeNames.includes(name) ? name : "none";
+  if (state.shape === "suzanne") ensureModelField();
   dirty = true;
 }
 
@@ -534,8 +567,6 @@ function setShapeThickness(value) {
   dirty = true;
 }
 
-// field.js swizzles to match; if one changes and the other does not, every
-// shape comes out on a different axis.
 function setNumBlobs(value) {
   state.numBlobs = value;
   dirty = true;
@@ -602,6 +633,7 @@ const app = {
   setCoreResolution,
   setIsolation,
   setTransmission,
+  setWireframe,
   setTwistStrength,
   setTwistRadius,
   setCoreIsolation,
@@ -781,6 +813,7 @@ function render() {
       twistAxis,
       twistStrength: state.twistStrength,
       twistRadius: state.twistRadius,
+      modelSDF,
     });
     pipeline.setField(volume.fieldTexture, state.isolation, volume.size);
     const polyStart = performance.now();

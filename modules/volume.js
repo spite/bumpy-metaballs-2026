@@ -28,6 +28,7 @@ void main() {
 `;
 
 const fragmentShader = `precision highp float;
+precision highp sampler3D;
 
 uniform float uSize;
 uniform float uSlice;
@@ -38,6 +39,15 @@ out vec4 fragColor;
 
 void main() {
   vec3 voxel = vec3(floor(gl_FragCoord.xy), uSlice);
+
+  // Emptied on purpose: marching cubes only builds a face where the field
+  // crosses the level inside a cube, so without this a surface running past the
+  // wall is left open.
+  vec3 edge = min(voxel, vec3(uSize - 1.0) - voxel);
+  if (min(edge.x, min(edge.y, edge.z)) < 0.5) {
+    fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+    return;
+  }
 
   // x / size, no half texel: half a voxel of disagreement here is half a voxel
   // of shadow offset.
@@ -167,6 +177,9 @@ class Volume {
         uTwistAxis: { value: new Vector3(0, 0, 1) },
         uTwistStrength: { value: 0 },
         uTwistRadius: { value: 0.28 },
+        uModelSDF: { value: null },
+        uModelMargin: { value: 1.15 },
+        uModelReady: { value: 0 },
       },
       vertexShader,
       fragmentShader,
@@ -281,6 +294,7 @@ class Volume {
       twistAxis,
       twistStrength = 0,
       twistRadius = 0.28,
+      modelSDF = null,
     },
   ) {
     const u = this.material.uniforms;
@@ -295,6 +309,8 @@ class Volume {
     if (twistAxis) u.uTwistAxis.value.copy(twistAxis);
     u.uTwistStrength.value = twistStrength;
     u.uTwistRadius.value = twistRadius;
+    if (modelSDF) u.uModelSDF.value = modelSDF;
+    u.uModelReady.value = modelSDF ? 1 : 0;
 
     const iu = this.indexMaterial.uniforms;
     iu.uIsolation.value = isolation;

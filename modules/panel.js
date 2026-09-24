@@ -15,6 +15,7 @@ const DESCRIPTIONS = {
   "Env intensity": "How brightly the environment lights the surface.",
 
   // Debug
+  "Wireframe": "Draw the marching cubes mesh as its triangle edges, so the grid the surface was built on is visible.",
   "Term": "Show one stage of the material's colour path on its own instead of the finished shading.",
   "View": "Show one of the pipeline's intermediate buffers instead of the rendered frame.",
   "View scale": "Brightness multiplier for the buffer view, so buffers with very different ranges are all readable. Logarithmic, and only active for the views that need it.",
@@ -277,6 +278,13 @@ function buildPanel(app) {
   term.randomize = null;
   bound.push(() => term.signal.set(app.state.term));
 
+  const wire = gui.addCheckbox("Wireframe", app.state.wireframe, {
+    title: DESCRIPTIONS["Wireframe"],
+    onChange: (v) => app.setWireframe(v),
+  });
+  wire.randomize = null;
+  bound.push(() => wire.signal.set(app.state.wireframe));
+
   const debugView = gui.addSelect(
     "View",
     app.state.debug,
@@ -362,7 +370,8 @@ function buildPanel(app) {
   });
   bound.push(() => ssize.signal.set(app.state.shapeSize));
 
-  const sthick = gui.addSlider("Shape thickness", app.state.shapeThickness, 0.0, 0.2, 0.005, {
+  const sthick = gui.addSlider("Shape thickness", app.state.shapeThickness, 0.0, 0.2, 0.001, {
+    curve: 2,
     title: DESCRIPTIONS["Shape thickness"],
     onChange: (v) => app.setShapeThickness(v),
   });
@@ -642,6 +651,7 @@ function buildPanel(app) {
     onChange: (v) => (grade.toneMapping.value = v ? 1 : 0),
   });
   aces.randomize = null;
+  bound.push(() => aces.signal.set(grade.toneMapping.value > 0));
   addUniformSlider("Exposure", grade.toneMappingExposure, 0.1, 3, 0.01);
   // Antialiasing is not a look either, so it sits out the randomizer too.
   const aa = gui.addCheckbox("FXAA", fxaa.fxaa.value > 0, {
@@ -649,6 +659,7 @@ function buildPanel(app) {
     onChange: (v) => (fxaa.fxaa.value = v ? 1 : 0),
   });
   aa.randomize = null;
+  bound.push(() => aa.signal.set(fxaa.fxaa.value > 0));
 
   // A randomizable control advertises that by putting the hint in its label's
   // tooltip -- the same slot the description above just filled, and the

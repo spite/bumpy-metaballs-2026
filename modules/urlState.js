@@ -90,6 +90,8 @@ function buildSchema(app) {
       parse: String,
       print: String,
     },
+    wire: bool(() => app.state.wireframe, app.setWireframe),
+
     dbg: {
       get: () => app.state.debug,
       set: (name) => app.setDebug(name),
@@ -211,13 +213,29 @@ function serialize(app) {
   return out.toString();
 }
 
-function apply(app, query) {
+// Skipped by a material preset, never by a url: a link has to reproduce what it
+// was saved from.
+const GEOMETRY_FIELDS = new Set([
+  "res",
+  "cres",
+  "blobson",
+  "blobs",
+  "iso",
+  "speed",
+  "smooth",
+  "shape",
+  "ssize",
+  "sthick",
+]);
+
+function apply(app, query, { keep } = {}) {
   const fields = schema(app);
   const params = new URLSearchParams(query);
 
   // Schema order, not url order, so the material and the transmission mode land
   // before anything they would reset.
   for (const [key, entry] of Object.entries(fields)) {
+    if (keep && keep.has(key)) continue;
     if (!params.has(key)) continue;
     const value = entry.parse(params.get(key));
     if (typeof value === "number" && !Number.isFinite(value)) continue;
@@ -276,4 +294,4 @@ function auditPresets(app) {
   return problems;
 }
 
-export { serialize, apply, auditPresets, readUrl, syncUrl };
+export { serialize, apply, auditPresets, readUrl, syncUrl, GEOMETRY_FIELDS };

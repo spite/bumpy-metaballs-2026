@@ -15,6 +15,11 @@ const shapeNames = [
   "octahedron",
   "icosahedron",
   "dodecahedron",
+  // Appended, never inserted: the index is what the shader switches on, so
+  // reordering this list changes which solid every saved preset draws.
+  "trefoil",
+  "mobius",
+  "suzanne",
 ];
 
 export { shapeNames };

@@ -62,9 +62,11 @@ float sampleBuffer(vec3 position, vec3 normal, vec2 uv) {
 #define SHADOW_STEPS 24
 
 float traceRay(vec3 worldPos, vec3 worldNormal, vec3 direction) {
-  // Facing away is night, not shadow; the resolve's N dot L already takes this
-  // side down and shadowing it too would double it.
-  if (dot(worldNormal, direction) <= 0.0) return 0.0;
+  // A ramp, not a step, or the terminator draws a hard line across every blob.
+  // Both exits below carry it: the solid hit is the path most shadowed pixels
+  // take, so scaling only the falloff does nothing.
+  float facing = smoothstep(0.0, 0.7, dot(worldNormal, direction));
+  if (facing <= 0.0) return 0.0;
 
   float stepLength = shadowDistance / float(SHADOW_STEPS);
 
@@ -87,7 +89,7 @@ float traceRay(vec3 worldPos, vec3 worldNormal, vec3 direction) {
 
     float f = fieldValue(p);
 
-    if (f > isolation) return 1.0;
+    if (f > isolation) return facing;
 
     // The field is a sum of falloffs, not a distance. (isolation - f) alone sits
     // near 1 across the whole cube and plunges at the blobs, so it has no dynamic
@@ -108,7 +110,7 @@ float traceRay(vec3 worldPos, vec3 worldNormal, vec3 direction) {
     }
   }
 
-  return 1.0 - clamp(visibility, 0.0, 1.0);
+  return facing * (1.0 - clamp(visibility, 0.0, 1.0));
 }
 
 float blueNoiseAt(vec2 p) {

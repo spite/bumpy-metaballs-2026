@@ -37,23 +37,6 @@ vec3 tonemap(vec3 c) {
 }
 `;
 
-// A direction in two channels, folded onto an octahedron.
-const octahedral = `
-vec2 octEncode(vec3 n) {
-  n /= abs(n.x) + abs(n.y) + abs(n.z);
-  vec2 e = n.z >= 0.0 ? n.xy : (1.0 - abs(n.yx)) * sign(n.xy);
-  return e * 0.5 + 0.5;
-}
-
-vec3 octDecode(vec2 e) {
-  e = e * 2.0 - 1.0;
-  vec3 n = vec3(e.xy, 1.0 - abs(e.x) - abs(e.y));
-  float t = max(-n.z, 0.0);
-  n.xy += vec2(n.x >= 0.0 ? -t : t, n.y >= 0.0 ? -t : t);
-  return normalize(n);
-}
-`;
-
 const viewDepth = `
 float viewDepth(float dist, float near, float far) {
   return clamp((dist - near) / (far - near), 1e-3, 1.0);
@@ -223,7 +206,6 @@ export {
   linearToSRGB,
   tonemap,
   mrtOutputs,
-  octahedral,
   sRGBToLinear,
   triplanarNormal,
   viewDepth,
