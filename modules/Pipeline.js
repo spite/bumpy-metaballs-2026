@@ -21,14 +21,13 @@ import { shader as aoFs } from "shaders/ao.js";
 import { shader as aoResolveFs } from "shaders/aoResolve.js";
 import { shader as aoCompositeFs } from "shaders/aoComposite.js";
 import { shader as debugFs } from "shaders/debug.js";
-import { shader as aberrationFs } from "shaders/aberration.js";
 import { shader as finalFs } from "shaders/final.js";
 import { shader as fxaaFs } from "shaders/fxaa.js";
 import { shader as copyFs } from "shaders/copy.js";
 
 
-// Opaque -> blurred copy -> transmissive shell -> AO -> chromatic aberration
-// -> bloom -> grade -> FXAA.
+// Opaque -> blurred copy -> transmissive shell -> AO -> bloom -> grade (with
+// chromatic aberration) -> FXAA.
 class Pipeline {
   constructor() {
     this.renderTarget = getFBO(1, 1, {
@@ -159,27 +158,12 @@ class Pipeline {
       "shadow": { texture: () => this.aoPass.texture, mode: 6 },
       shaded: { texture: () => this.aoCompositePass.texture, mode: 0 },
       backdrop: { texture: () => this.copyPass.texture, mode: 0 },
-      aberration: { texture: () => this.aberrationPass.texture, mode: 0 },
       "bloom-0": { texture: () => this.bloom.blurPasses[0].texture, mode: 0 },
       "bloom-1": { texture: () => this.bloom.blurPasses[1].texture, mode: 0 },
       "bloom-2": { texture: () => this.bloom.blurPasses[2].texture, mode: 0 },
       "bloom-3": { texture: () => this.bloom.blurPasses[3].texture, mode: 0 },
       "bloom-4": { texture: () => this.bloom.blurPasses[4].texture, mode: 0 },
     };
-
-    this.aberrationShader = new RawShaderMaterial({
-      uniforms: {
-        inputTexture: { value: this.aoCompositePass.texture },
-        aberration: { value: 6 },
-        resolution: { value: new Vector2(1, 1) },
-      },
-      vertexShader: orthoVs,
-      fragmentShader: aberrationFs,
-      glslVersion: GLSL3,
-    });
-    this.aberrationPass = new ShaderPass(this.aberrationShader, {
-      type: HalfFloatType,
-    });
 
     this.bloom = new BloomPass(5, { type: HalfFloatType });
     this.bloom.threshold = 0.35;
@@ -194,6 +178,8 @@ class Pipeline {
         bloom2: { value: null },
         bloom3: { value: null },
         bloom4: { value: null },
+        aberration: { value: 6 },
+        resolution: { value: new Vector2(1, 1) },
         bloomStrength: { value: 0.35 },
         bloomRadius: { value: 0.5 },
         vignette: { value: 0.35 },
@@ -240,12 +226,11 @@ class Pipeline {
     this.aoResolvePass.setSize(aw, ah);
     this.aoCompositePass.setSize(w, h);
     this.debugPass.setSize(w, h);
-    this.aberrationPass.setSize(w, h);
     this.finalPass.setSize(w, h);
     this.fxaaPass.setSize(w, h);
     this.bloom.setSize(Math.round(width), Math.round(height));
 
-    this.aberrationShader.uniforms.resolution.value.set(width, height);
+    this.finalShader.uniforms.resolution.value.set(width, height);
     this.fxaaShader.uniforms.inputTexture.value = this.finalPass.texture;
   }
 
@@ -303,7 +288,9 @@ class Pipeline {
       if (this.farWall && this.transmissiveMaterial) {
         this.transmissiveMaterial.side = BackSide;
         renderer.setRenderTarget(this.renderTarget);
+        this.timer?.begin("scene");
         renderer.render(scene, camera);
+        this.timer?.end();
         renderer.setRenderTarget(null);
         this.transmissiveMaterial.side = FrontSide;
       }
@@ -352,15 +339,7 @@ class Pipeline {
     this.aoCompositePass.render(renderer);
     this.timer?.end();
 
-    let source = this.aoCompositePass.texture;
-
-    if (this.aberrationShader.uniforms.aberration.value > 0) {
-      this.aberrationShader.uniforms.inputTexture.value = source;
-      this.timer?.begin("aberration");
-      this.aberrationPass.render(renderer);
-      this.timer?.end();
-      source = this.aberrationPass.texture;
-    }
+    const source = this.aoCompositePass.texture;
 
     const u = this.finalShader.uniforms;
     // Wrapped well inside the range a float holds exactly, so the hash gets a
@@ -405,7 +384,6 @@ class Pipeline {
     this.aoPass.dispose();
     this.aoResolvePass.dispose();
     this.debugPass.dispose();
-    this.aberrationPass.dispose();
     this.finalPass.dispose();
     this.fxaaPass.dispose();
   }

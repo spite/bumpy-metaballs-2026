@@ -106,16 +106,9 @@ const presets = [
       },
     },
   },
-  // A preset can also be a saved link, which is what this one is. The block
-  // form above reaches the two materials and the backdrop and nothing else,
-  // and a look that also picks a shape, a smoothing amount, an occlusion tint
-  // and a grade cannot be written in it. The url form has a table for every one
-  // of those already — the same one a shared link goes through — so it is
-  // applied through that rather than by growing a second schema alongside it.
-  //
-  // It opens with `mat=ice`, so it resets to a known material first and layers
-  // itself over that, instead of inheriting whatever happened to be on screen.
-  // A preset named in one of these must be a block preset, never another link.
+  // Link presets must name every url field except mat, which is optional and
+  // applies that preset first as a base. Picking one from the panel skips
+  // GEOMETRY_FIELDS in modules/urlState.js; only loading a url applies those.
   {
     name: "blood ice",
     url: "mat=flesh&trans=1&res=50&blobson=1&blobs=20&iso=80&speed=1&smooth=0.69&shape=icosahedron&ssize=0.2&sthick=0.12&onrgh=0&onmet=0&env=studio&envi=1&onmap=crinkle&onrm=1&otex=5&otint=ffcccc&oalb=1&ospec=1&sss=0&scrn=0.24&sky=ff9184&gnd=b54134&inrgh=0.25&inmet=0&inmap=crinkle&inrm=1&intex=5&inalb=1&inspec=1&insss=1&inscrn=0&intint=ff5c49&corelv=170&oabs=ffffff&thick=1&refr=0.35&disp=0.2&iblur=12.4&scat=0.45&dens=1.8&rim=1.16&refl=1&gloss=0&indens=1.8&farwall=1&aostr=3&aorad=40&aobias=0.05&aonear=1&aofar=4&aocol=06070b&bloom=0.35&bloomr=0.5&bloomt=0.35&ab=6&vig=0.35&grain=0.05&dith=1&aces=1&expo=1&fxaa=1&cres=50&wire=0&dbg=off&dbgs=1&aocore=1&term=off",

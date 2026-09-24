@@ -868,7 +868,6 @@ function render() {
   stats.gpuVolume.sample(gpuTimer.take("volume"));
   stats.gpuScene.sample(gpuTimer.take("scene"));
   stats.gpuAo.sample(gpuTimer.take("ao"));
-  stats.gpuAberration.sample(gpuTimer.take("aberration"));
   stats.gpuBloom.sample(gpuTimer.take("bloom"));
   stats.gpuGrade.sample(gpuTimer.take("grade"));
 

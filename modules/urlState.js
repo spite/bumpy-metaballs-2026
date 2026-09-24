@@ -22,7 +22,7 @@ function buildSchema(app) {
   const ao = app.pipeline.aoShader.uniforms;
   const aoOut = app.pipeline.aoResolveShader.uniforms;
   const aoTint = app.pipeline.aoCompositeShader.uniforms;
-  const chroma = app.pipeline.aberrationShader.uniforms;
+  const chroma = app.pipeline.finalShader.uniforms;
   const fxaa = app.pipeline.fxaaShader.uniforms;
   const core = app.coreMaterial.uniforms;
   const outer = app.material.uniforms;

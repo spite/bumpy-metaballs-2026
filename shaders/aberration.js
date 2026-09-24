@@ -1,15 +1,6 @@
 const ABERRATION_SAMPLES = 12;
 
-const shader = `precision highp float;
-
-uniform sampler2D inputTexture;
-uniform float aberration;
-uniform vec2 resolution;
-
-in vec2 vUv;
-
-out vec4 fragColor;
-
+const chromaticAberration = `
 float hash12(vec2 p) {
   vec3 p3 = fract(vec3(p.xyx) * 0.1031);
   p3 += dot(p3, p3.yzx + 33.33);
@@ -29,7 +20,7 @@ vec3 spectrumOffset(float t) {
   return clamp(vec3(-t0, 1.0 - abs(t0), t0), 0.0, 1.0);
 }
 
-void main() {
+vec3 aberrate(sampler2D source, vec2 uv) {
   float stepsiz = ${(1 / (ABERRATION_SAMPLES - 1)).toFixed(8)};
   float t = hash12(gl_FragCoord.xy) * stepsiz;
 
@@ -40,12 +31,13 @@ void main() {
     vec3 w = spectrumOffset(t);
     sumw += w;
     float px = mix(-aberration, aberration, t);
-    vec2 duv = clamp(brownConradyDistortion(vUv, px), 0.0, 1.0);
-    sumcol += w * texture(inputTexture, duv).rgb;
+    vec2 duv = clamp(brownConradyDistortion(uv, px), 0.0, 1.0);
+    sumcol += w * texture(source, duv).rgb;
     t += stepsiz;
   }
 
-  fragColor = vec4(sumcol / sumw, 1.0);
-}`;
+  return sumcol / sumw;
+}
+`;
 
-export { shader };
+export { chromaticAberration };

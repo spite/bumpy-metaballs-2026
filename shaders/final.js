@@ -1,3 +1,5 @@
+import { chromaticAberration } from "shaders/aberration.js";
+
 const shader = `precision highp float;
 
 uniform sampler2D sceneMap;
@@ -16,6 +18,8 @@ uniform float dither;
 uniform float grainFrame;
 uniform float toneMapping;
 uniform float toneMappingExposure;
+uniform float aberration;
+uniform vec2 resolution;
 
 in vec2 vUv;
 
@@ -88,12 +92,13 @@ float grainAt(vec2 p, float frame) {
   return float(bits & 0xFFFFFFu) / float(0xFFFFFFu);
 }
 
+${chromaticAberration}
 float bloomFactor(float factor) {
   return mix(factor, 1.2 - factor, bloomRadius);
 }
 
 void main() {
-  vec3 color = texture(sceneMap, vUv).rgb;
+  vec3 color = aberration > 0.0 ? aberrate(sceneMap, vUv) : texture(sceneMap, vUv).rgb;
 
   if (bloomStrength > 0.0) {
     vec3 b = bloomFactor(1.0) * texture(bloom0, vUv).rgb;

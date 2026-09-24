@@ -102,9 +102,8 @@ const DESCRIPTIONS = {
   "GPU volume": "GPU time building the field volume and its marching-cubes mesh.",
   "GPU scene": "GPU time drawing the scene into the G-buffer.",
   "GPU occlusion": "GPU time on the occlusion and shadow pass.",
-  "GPU aberration": "GPU time on the chromatic aberration pass.",
   "GPU bloom": "GPU time on the bloom pass.",
-  "GPU grade": "GPU time on the final grade: tone mapping, vignette, grain.",
+  "GPU grade": "GPU time on the final grade: chromatic aberration, tone mapping, vignette, grain, FXAA.",
   "Triangles": "Triangles drawn this frame.",
   "Draw calls": "Draw calls issued this frame.",
   "Geometries": "Geometries currently allocated on the GPU.",
@@ -125,7 +124,6 @@ function buildPanel(app) {
   const aoOut = app.pipeline.aoResolveShader.uniforms;
   const aoTint = app.pipeline.aoCompositeShader.uniforms;
   const grade = app.pipeline.finalShader.uniforms;
-  const chroma = app.pipeline.aberrationShader.uniforms;
   const fxaa = app.pipeline.fxaaShader.uniforms;
   const core = app.coreMaterial.uniforms;
 
@@ -579,7 +577,6 @@ function buildPanel(app) {
       app.stats.gpuVolume,
       app.stats.gpuScene,
       app.stats.gpuAo,
-      app.stats.gpuAberration,
       app.stats.gpuBloom,
       app.stats.gpuGrade,
     ],
@@ -600,8 +597,6 @@ function buildPanel(app) {
     title: DESCRIPTIONS["GPU scene"], format: ms });
   gui.addMonitor("GPU occlusion", app.stats.gpuAo, {
     title: DESCRIPTIONS["GPU occlusion"], format: ms });
-  gui.addMonitor("GPU aberration", app.stats.gpuAberration, {
-    title: DESCRIPTIONS["GPU aberration"], format: ms });
   gui.addMonitor("GPU bloom", app.stats.gpuBloom, {
     title: DESCRIPTIONS["GPU bloom"], format: ms });
   gui.addMonitor("GPU grade", app.stats.gpuGrade, {
@@ -630,7 +625,7 @@ function buildPanel(app) {
   });
 
   gui.addSeparator();
-  addUniformSlider("Aberration", chroma.aberration, 0, 30, 0.5);
+  addUniformSlider("Aberration", grade.aberration, 0, 30, 0.5);
   // Full strength is worth having on the slider but not worth rolling into:
   // it leaves almost nothing of the frame outside the middle.
   const vignette = addUniformSlider("Vignette", grade.vignette, 0, 1, 0.01);

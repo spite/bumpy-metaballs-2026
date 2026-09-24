@@ -18,7 +18,6 @@ const stats = {
   gpuVolume: source.counter("gpuVolume"),
   gpuScene: source.counter("gpuScene"),
   gpuAo: source.counter("gpuAo"),
-  gpuAberration: source.counter("gpuAberration"),
   gpuBloom: source.counter("gpuBloom"),
   gpuGrade: source.counter("gpuGrade"),
 
