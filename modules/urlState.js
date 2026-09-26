@@ -1,3 +1,4 @@
+import { surfaceOffset } from "modules/volume.js";
 import { presets } from "modules/presets.js";
 
 // Every tweakable value in one table. Order matters on the way in: the
@@ -65,6 +66,12 @@ function buildSchema(app) {
     blobs: num(() => app.state.numBlobs, app.setNumBlobs),
     iso: num(() => app.state.isolation, app.setIsolation),
     speed: num(() => app.state.speed, (v) => (app.state.speed = v)),
+    motion: {
+      get: () => app.state.motion,
+      set: (name) => app.setMotion(name),
+      parse: String,
+      print: String,
+    },
     smooth: num(() => app.state.smoothing, app.setSmoothing),
     shape: {
       get: () => app.state.shape,
@@ -74,6 +81,11 @@ function buildSchema(app) {
     },
     ssize: num(() => app.state.shapeSize, app.setShapeSize),
     sthick: num(() => app.state.shapeThickness, app.setShapeThickness),
+    sround: num(() => app.state.shapeRounding, app.setShapeRounding),
+    sheight: num(() => app.state.shapeHeight, app.setShapeHeight),
+    twx: num(() => app.state.axisTwist[0], (v) => app.setAxisTwist(0, v)),
+    twy: num(() => app.state.axisTwist[1], (v) => app.setAxisTwist(1, v)),
+    twz: num(() => app.state.axisTwist[2], (v) => app.setAxisTwist(2, v)),
 
     onrgh: uniformNum(outer.roughness),
     onmet: uniformNum(outer.metalness),
@@ -222,10 +234,16 @@ const GEOMETRY_FIELDS = new Set([
   "blobs",
   "iso",
   "speed",
+  "motion",
   "smooth",
   "shape",
   "ssize",
   "sthick",
+  "sround",
+  "sheight",
+  "twx",
+  "twy",
+  "twz",
 ]);
 
 function apply(app, query, { keep } = {}) {
@@ -246,8 +264,39 @@ function apply(app, query, { keep } = {}) {
 function readUrl(app) {
   const query = location.hash.replace(/^#/, "") || location.search.replace(/^\?/, "");
   if (!query) return false;
-  apply(app, query);
+
+  // Every saved link names speed; one missing a newer field predates it.
+  const params = new URLSearchParams(query);
+  const saved = params.has("speed");
+  if (saved && !params.has("motion")) params.set("motion", "legacy");
+
+  apply(app, params.toString());
+
+  if (saved && !params.has("sround")) app.setShapeRounding(legacyRounding(app.state));
+  if (saved && !params.has("sheight")) legacyDimensions(app);
   return true;
+}
+
+function legacyDimensions(app) {
+  const { shape, numBlobs, isolation, shapeSize, shapeThickness } = app.state;
+  const offset = surfaceOffset(numBlobs, isolation);
+  if (shape === "box" || shape.endsWith("hedron")) app.setShapeSize(shapeSize + shapeThickness);
+  if (shape === "cylinder") app.setShapeHeight(2 * (shapeThickness + offset));
+  if (shape === "torus" || shape === "trefoil") {
+    app.setShapeSize(Math.max(shapeSize - offset, 0));
+    app.setShapeThickness(shapeThickness + offset);
+  }
+  if (shape === "mobius") {
+    app.setShapeSize(Math.max(shapeSize - offset, 0));
+    app.setShapeThickness(shapeThickness + offset / 0.8);
+  }
+}
+
+function legacyRounding({ shape, numBlobs, isolation, shapeThickness }) {
+  const offset = surfaceOffset(numBlobs, isolation);
+  if (shape === "box") return offset + shapeThickness;
+  if (shape === "cylinder") return offset;
+  return 0;
 }
 
 // Polled rather than subscribed: the controls write straight into uniforms, so

@@ -13,6 +13,7 @@ import {
 import { MeshBVH } from "third_party/bvh.js";
 import { OBJLoader } from "third_party/OBJLoader.js";
 import { LoopSubdivision } from "third_party/LoopSubdivision.js";
+import { nextPaint } from "modules/loading.js";
 
 const BAKE_SIZE = 64;
 
@@ -107,7 +108,7 @@ function bake(geometry) {
     }
   }
 
-  const texture = new Data3DTexture(data, BAKE_SIZE, BAKE_SIZE, BAKE_SIZE);
+  const texture = new Data3DTexture(data.slice(), BAKE_SIZE, BAKE_SIZE, BAKE_SIZE);
   texture.format = RedFormat;
   texture.type = FloatType;
   texture.minFilter = LinearFilter;
@@ -115,7 +116,50 @@ function bake(geometry) {
   texture.unpackAlignment = 1;
   texture.needsUpdate = true;
 
-  return texture;
+  return { texture, raw: data, sigma: 0 };
+}
+
+function smoothMeshField(field, sigma) {
+  if (field.sigma === sigma) return false;
+  field.sigma = sigma;
+
+  const out = field.texture.image.data;
+  if (sigma <= 0) {
+    out.set(field.raw);
+    field.texture.needsUpdate = true;
+    return true;
+  }
+
+  const radius = Math.ceil(3 * sigma);
+  const weights = new Float32Array(2 * radius + 1);
+  let sum = 0;
+  for (let i = -radius; i <= radius; i++) {
+    weights[i + radius] = Math.exp((-i * i) / (2 * sigma * sigma));
+    sum += weights[i + radius];
+  }
+  for (let i = 0; i < weights.length; i++) weights[i] /= sum;
+
+  const n = BAKE_SIZE;
+  const blur = (source, target, stride) => {
+    for (let i = 0; i < source.length; i++) {
+      const c = Math.floor(i / stride) % n;
+      let value = 0;
+      for (let k = -radius; k <= radius; k++) {
+        const j = Math.min(n - 1, Math.max(0, c + k));
+        value += weights[k + radius] * source[i + (j - c) * stride];
+      }
+      target[i] = value;
+    }
+  };
+
+  const x = new Float32Array(out.length);
+  const y = new Float32Array(out.length);
+  blur(field.raw, x, 1);
+  blur(x, y, n);
+  blur(y, out, n * n);
+
+  field.texture.needsUpdate = true;
+  return true;
 }
 
 async function loadMeshField(url) {
@@ -124,7 +168,12 @@ async function loadMeshField(url) {
     throw new Error(`could not load ${url}: ${response.status}`);
   }
 
-  const group = new OBJLoader().parse(await response.text());
+  const text = await response.text();
+
+  // Everything from here blocks for seconds; let the loading indicator paint.
+  await nextPaint();
+
+  const group = new OBJLoader().parse(text);
   const positions = mergedPositions(group);
 
   const geometry = new BufferGeometry();
@@ -141,4 +190,4 @@ async function loadMeshField(url) {
   return bake(smoothed);
 }
 
-export { loadMeshField, BAKE_MARGIN };
+export { loadMeshField, smoothMeshField, BAKE_MARGIN };

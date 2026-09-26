@@ -22,12 +22,14 @@ import { environmentLight } from "modules/sh.js";
 import { Volume } from "modules/volume.js";
 import { MarchGeometry, makeTriTableTexture } from "modules/MarchGeometry.js";
 import { HistoPyramid } from "modules/HistoPyramid.js";
+import { motionNames } from "modules/blobMotion.js";
 import { shader as marchVs } from "shaders/marchVs.js";
 import { OrbitControls } from "third_party/OrbitControls.js";
 import { Pipeline } from "modules/Pipeline.js";
 import { BLUE_NOISE_SIZE, blueNoiseTexture } from "modules/blueNoiseTexture.js";
 import { shapeNames } from "modules/sdf.js";
-import { loadMeshField } from "modules/meshField.js";
+import { loadMeshField, smoothMeshField } from "modules/meshField.js";
+import { trackLoad } from "modules/loading.js";
 import { environments, normalMaps, presets } from "modules/presets.js";
 import { buildPanel } from "modules/panel.js";
 import {
@@ -51,6 +53,7 @@ const state = {
   numBlobs: 20,
   isolation: 80,
   speed: 1,
+  motion: "drift",
   paused: false,
   transmission: false,
   coreIsolation: 170,
@@ -64,10 +67,13 @@ const state = {
   shape: "none",
   shapeSize: 0.2,
   shapeThickness: 0.055,
+  shapeRounding: 0.14,
+  shapeHeight: 0.28,
   outerNormalMap: normalMaps[0].name,
   innerNormalMap: normalMaps[0].name,
   twistStrength: 0,
   twistRadius: 0.28,
+  axisTwist: [0, 0, 0],
   wireframe: false,
 };
 
@@ -126,7 +132,7 @@ async function setEnvironment(name) {
   state.environment = entry.name;
 
   const request = ++envRequest;
-  const env = await loadEnvironment(entry.url);
+  const env = await loadEnvironment(entry.url, entry.name);
   if (request !== envRequest) return;
 
   // Applied every time, never inside the load: caching the load's promise meant
@@ -143,10 +149,10 @@ async function setEnvironment(name) {
   if (panel) panel.sync();
 }
 
-function loadEnvironment(url) {
+function loadEnvironment(url, name) {
   let pending = envCache.get(url);
   if (pending === undefined) {
-    pending = buildEnvironment(url);
+    pending = trackLoad(`Loading the ${name} environment`, buildEnvironment(url));
     envCache.set(url, pending);
   }
   return pending;
@@ -189,7 +195,10 @@ function loadTexture(url, wrapping) {
   let texture = textureCache.get(url);
 
   if (texture === undefined) {
-    texture = loader.load(url);
+    let settle;
+    const loaded = new Promise((resolve) => (settle = resolve));
+    texture = loader.load(url, settle, undefined, settle);
+    trackLoad(`Loading ${url.split("/").pop()}`, loaded);
     textureCache.set(url, texture);
   }
 
@@ -450,6 +459,11 @@ function setTwistStrength(value) {
   if (panel) panel.sync();
 }
 
+function setAxisTwist(axis, degrees) {
+  state.axisTwist[axis] = degrees;
+  dirty = true;
+}
+
 function setTwistRadius(value) {
   state.twistRadius = value;
   dirty = true;
@@ -530,14 +544,18 @@ function setSmoothing(value) {
   dirty = true;
 }
 
-let modelSDF = null;
+let modelField = null;
 let modelPending = null;
 
+const MODEL_SMOOTHING_CELLS = 3;
+
 function ensureModelField() {
-  if (modelSDF || modelPending) return;
-  modelPending = loadMeshField("assets/suzanne.obj")
-    .then((texture) => {
-      modelSDF = texture;
+  if (modelField || modelPending) return;
+  modelPending = trackLoad("Building Suzanne", loadMeshField("assets/suzanne.obj"), {
+    immediate: true,
+  })
+    .then((field) => {
+      modelField = field;
       dirty = true;
     })
     .catch((error) => {
@@ -550,6 +568,7 @@ function setShape(name) {
   state.shape = shapeNames.includes(name) ? name : "none";
   if (state.shape === "suzanne") ensureModelField();
   dirty = true;
+  if (panel) panel.sync();
 }
 
 function setShapeSize(value) {
@@ -559,6 +578,21 @@ function setShapeSize(value) {
 
 function setShapeThickness(value) {
   state.shapeThickness = value;
+  dirty = true;
+}
+
+function setShapeRounding(value) {
+  state.shapeRounding = value;
+  dirty = true;
+}
+
+function setShapeHeight(value) {
+  state.shapeHeight = value;
+  dirty = true;
+}
+
+function setMotion(name) {
+  state.motion = motionNames.includes(name) ? name : "drift";
   dirty = true;
 }
 
@@ -628,9 +662,11 @@ const app = {
   setWireframe,
   setTwistStrength,
   setTwistRadius,
+  setAxisTwist,
   setCoreIsolation,
   setBlobs,
   setNumBlobs,
+  setMotion,
   setNormalMap,
   setEnvironment,
   setDebug,
@@ -640,6 +676,8 @@ const app = {
   setShape,
   setShapeSize,
   setShapeThickness,
+  setShapeRounding,
+  setShapeHeight,
   setCoreOcclusion,
   setFarWall,
   setPaused,
@@ -651,7 +689,7 @@ const app = {
   coreMaterial,
 };
 
-// A block preset names 38 of the 72 fields a link carries, so without this
+// A block preset names only some of the fields a link carries, so without this
 // selecting one leaves the rest wherever the last look put it. Taken from the
 // uniforms' own defaults, before any preset has touched them.
 const pristine = (() => {
@@ -677,11 +715,83 @@ document.querySelector("#switchMaterial").addEventListener("click", (e) => {
   applyPreset(state.preset + 1);
 });
 
+const between = (min, max) => min + Math.random() * (max - min);
+const pick = (list) => list[Math.floor(Math.random() * list.length)];
+
+// Ranges picked for looking good, not the sliders' full ranges. Suzanne only
+// once built: building it freezes the page for seconds.
+function randomizeScene() {
+  const shapes = shapeNames.filter((name) => name !== "suzanne" || modelField);
+  const shape = Math.random() < 0.35 ? "none" : pick(shapes);
+  setShape(shape);
+
+  setBlobs(shape === "none" || Math.random() < 0.85);
+  setNumBlobs(Math.round(between(8, 32)));
+  setMotion(pick(motionNames));
+  setSmoothing(Math.random() < 0.7 ? 0 : between(0.1, 0.5));
+  setTwistStrength(Math.random() < 0.25 ? between(0.5, 2) : 0);
+  for (let axis = 0; axis < 3; axis++) setAxisTwist(axis, 0);
+  if (Math.random() < 0.25) {
+    setAxisTwist(Math.floor(Math.random() * 3), Math.round(between(90, 270) * (Math.random() < 0.5 ? -1 : 1)));
+  }
+
+  if (shape === "torus") {
+    setShapeSize(between(0.18, 0.32));
+    setShapeThickness(between(0.03, 0.1));
+  } else if (shape === "trefoil") {
+    setShapeSize(between(0.25, 0.4));
+    setShapeThickness(between(0.03, 0.08));
+  } else if (shape === "mobius") {
+    setShapeSize(between(0.18, 0.3));
+    setShapeThickness(between(0.01, 0.05));
+  } else if (shape === "cylinder") {
+    setShapeSize(between(0.1, 0.22));
+    setShapeHeight(between(0.2, 0.6));
+    setShapeRounding(between(0, 0.1));
+  } else if (shape === "gyroid") {
+    setShapeSize(between(0.25, 0.4));
+    setShapeThickness(between(0.03, 0.07));
+  } else if (["cinquefoil", "torus knot"].includes(shape)) {
+    setShapeSize(between(0.25, 0.38));
+    setShapeThickness(between(0.02, 0.05));
+  } else if (shape === "arc") {
+    setShapeSize(between(0.18, 0.3));
+    setShapeThickness(between(0.04, 0.1));
+  } else if (["goursat", "pretzel", "star"].includes(shape)) {
+    setShapeSize(between(0.25, 0.4));
+  } else if (shape === "spike ball") {
+    setShapeSize(between(0.3, 0.42));
+    setShapeThickness(between(0.025, 0.05));
+  } else if (shape === "stella") {
+    setShapeSize(between(0.3, 0.42));
+    setShapeRounding(between(0, 0.04));
+  } else if (shape === "box") {
+    setShapeSize(between(0.12, 0.25));
+    setShapeRounding(between(0, 0.12));
+  } else if (shape !== "none") {
+    setShapeSize(between(0.15, 0.3));
+    setShapeRounding(between(0, 0.12));
+  }
+}
+
+function randomizeLook() {
+  const others = presets.map((_, i) => i).filter((i) => i !== state.preset);
+  applyPreset(pick(others));
+  randomizeScene();
+  if (panel) panel.sync();
+}
+
 bindKey("Space", () => setPaused(!state.paused), { preventDefault: true });
-bindKey("KeyR", () => panel.randomize());
+bindKey("KeyR", randomizeLook);
 bindKey("KeyF", toggleFullscreen);
 bindKey("ArrowRight", () => applyPreset(state.preset + 1));
 bindKey("ArrowLeft", () => applyPreset(state.preset - 1));
+bindKey("Tab", (event) => {
+  // Inside the panel Tab still moves focus between its controls.
+  if (event.target.closest?.("#panel")) return;
+  event.preventDefault();
+  document.body.classList.toggle("ui-hidden");
+});
 
 // Fullscreen
 
@@ -799,21 +909,29 @@ function render() {
 
     gpuTimer.begin("volume");
 
+    if (modelField && state.shape === "suzanne") {
+      smoothMeshField(modelField, state.shapeRounding * MODEL_SMOOTHING_CELLS);
+    }
+
     volume.setSize(state.resolution);
     volume.update(renderer, {
       time,
       numBlobs: state.numBlobs,
       blobs: state.blobs,
+      motion: state.motion,
       shape: state.shape === "none" ? 0 : shapeNames.indexOf(state.shape) + 1,
       shapeSize: state.shapeSize,
       shapeThickness: state.shapeThickness,
+      shapeRounding: state.shapeRounding,
+      shapeHeight: state.shapeHeight,
       isolation: state.isolation,
       smoothing: state.smoothing,
       twistCenter,
       twistAxis,
       twistStrength: state.twistStrength,
       twistRadius: state.twistRadius,
-      modelSDF,
+      axisTwist: state.axisTwist,
+      modelSDF: modelField?.texture ?? null,
     });
     pipeline.setField(volume.fieldTexture, state.isolation, volume.size);
     const polyStart = performance.now();

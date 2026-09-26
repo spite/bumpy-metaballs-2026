@@ -1,6 +1,3 @@
-// Marching cubes in the vertex shader. Each vertex of the surface finds its
-// voxel and its slot within that voxel's triangles in modules/HistoPyramid.js,
-// so the draw is as long as the surface rather than the grid.
 import { pyramidTraversal } from "modules/HistoPyramid.js";
 import { VERTICES_PER_INSTANCE } from "modules/MarchGeometry.js";
 

@@ -15,11 +15,22 @@ const shapeNames = [
   "octahedron",
   "icosahedron",
   "dodecahedron",
-  // Appended, never inserted: the index is what the shader switches on, so
-  // reordering this list changes which solid every saved preset draws.
+  // The shader switches on each name's position here, with the numbers
+  // written into shapeDistance: change the order and they must change too.
   "trefoil",
   "mobius",
   "suzanne",
+  "sphube",
+  "goursat",
+  "gyroid",
+  "tetrahedron",
+  "cinquefoil",
+  "torus knot",
+  "arc",
+  "spike ball",
+  "pretzel",
+  "star",
+  "stella",
 ];
 
 export { shapeNames };

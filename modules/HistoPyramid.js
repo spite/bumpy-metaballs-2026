@@ -13,15 +13,9 @@ import {
   WebGLRenderTarget,
 } from "three";
 
-// The march draws only as many vertices as the surface has, and each finds its
-// voxel by walking down this pyramid of counts. Voxels are laid out in a
-// square 2D base so every level halves both sides; each texel of level k
-// holds the totals of its four children in rgba.
-//
-// Levels share two atlases, odd and even, because three counts vertex and
-// fragment samplers against one limit of 16 and a sampler per level spent
-// most of it. Alternating means a level is never read from the texture it is
-// being written into.
+// Two atlases, not a texture per level: three counts vertex and fragment
+// samplers against one limit of 16. Alternating odd and even keeps a level
+// from being read out of the texture it is written into.
 const MAX_LEVELS = 11;
 
 const vertexShader = `precision highp float;
@@ -109,9 +103,6 @@ const levelSteps = Array.from({ length: MAX_LEVELS }, (_, i) => MAX_LEVELS - i)
   )
   .join("\n");
 
-// Finds the voxel holding vertex slot and leaves slot as the index within it.
-// Only the top level can be out of range, which is a vertex past the end of
-// the surface.
 const pyramidTraversal = `
 uniform sampler2D pyramidBase;
 uniform sampler2D pyramidOdd;
@@ -216,8 +207,6 @@ class HistoPyramid {
     this.dispose(false);
     this.base = target(this.width, this.width, RGFormat);
 
-    // The first level of an atlas fills its left side and the rest stack in a
-    // column to its right, which the first is always tall enough to hold.
     this.offsets.fill(0);
     this.atlases = [1, 2].map((first) => {
       const side = this.width >> first;
@@ -234,8 +223,6 @@ class HistoPyramid {
     this.invalidate();
   }
 
-  // Past results describe a surface that is gone, so until a fresh count comes
-  // back the march has to be drawn at its worst case.
   invalidate() {
     this.generation++;
     this.total = null;
@@ -245,8 +232,8 @@ class HistoPyramid {
     return Math.max(0, this.grid - 1) ** 3 * 15;
   }
 
-  // The count read back is about six frames old at 60fps; the margin covers
-  // how much the surface can grow in that time while it animates.
+  // The count is about six frames old; the margin is what the surface can grow
+  // in that time. Too small and animating surfaces lose triangles.
   get vertexBudget() {
     if (this.total === null) return this.maxVertices;
     return Math.min(this.maxVertices, Math.ceil(this.total * 1.25) + 1536);
@@ -291,8 +278,6 @@ class HistoPyramid {
     renderer.setRenderTarget(target);
   }
 
-  // A fence per read, checked at the top of each frame, so a count is used on
-  // the frame it arrives.
   request(renderer) {
     const gl = (this.gl ??= renderer.getContext());
     this.poll();

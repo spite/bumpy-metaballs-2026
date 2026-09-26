@@ -13,6 +13,7 @@ import {
 } from "three";
 
 import { field } from "shaders/field.js";
+import { blobPositions, MAX_BLOBS } from "modules/blobMotion.js";
 
 // The field on the GPU as a 3D texture, so the shadow pass has something to
 // trace against. A draw writes one 2D layer, so each slice is rendered
@@ -98,6 +99,12 @@ void main() {
 }
 `;
 
+// Must match strength and surfaceOffset in fieldAt, shaders/field.js.
+function surfaceOffset(numBlobs, isolation) {
+  const strength = 1.2 / ((Math.sqrt(numBlobs) - 1) / 4 + 1);
+  return Math.sqrt(strength / (isolation + 12));
+}
+
 class Volume {
   constructor(size = 50) {
     this.camera = new OrthographicCamera(-0.5, 0.5, 0.5, -0.5, 0, 1);
@@ -110,14 +117,17 @@ class Volume {
         uShape: { value: 0 },
         uShapeSize: { value: 0.2 },
         uShapeThickness: { value: 0.055 },
+        uShapeRounding: { value: 0 },
+        uShapeHeight: { value: 0.28 },
         uNumBlobs: { value: 20 },
         uBlobsOn: { value: 1 },
-        uTime: { value: 0 },
+        uBlobs: { value: new Float32Array(MAX_BLOBS * 3) },
         uIsolation: { value: 80 },
         uTwistCenter: { value: new Vector3(0.5, 0.5, 0.5) },
         uTwistAxis: { value: new Vector3(0, 0, 1) },
         uTwistStrength: { value: 0 },
         uTwistRadius: { value: 0.28 },
+        uAxisTwist: { value: new Vector3() },
         uModelSDF: { value: null },
         uModelMargin: { value: 1.15 },
         uModelReady: { value: 0 },
@@ -192,30 +202,37 @@ class Volume {
       time,
       numBlobs,
       blobs,
+      motion = "drift",
       shape,
       shapeSize,
       shapeThickness,
+      shapeRounding = 0,
+      shapeHeight = 0.28,
       isolation,
       smoothing = 0,
       twistCenter,
       twistAxis,
       twistStrength = 0,
       twistRadius = 0.28,
+      axisTwist = [0, 0, 0],
       modelSDF = null,
     },
   ) {
     const u = this.material.uniforms;
-    u.uTime.value = time;
+    blobPositions(motion, numBlobs, time, u.uBlobs.value);
     u.uNumBlobs.value = numBlobs;
     u.uBlobsOn.value = blobs ? 1 : 0;
     u.uShape.value = shape;
     u.uShapeSize.value = shapeSize;
     u.uShapeThickness.value = shapeThickness;
+    u.uShapeRounding.value = shapeRounding;
+    u.uShapeHeight.value = shapeHeight;
     u.uIsolation.value = isolation;
     if (twistCenter) u.uTwistCenter.value.copy(twistCenter);
     if (twistAxis) u.uTwistAxis.value.copy(twistAxis);
     u.uTwistStrength.value = twistStrength;
     u.uTwistRadius.value = twistRadius;
+    u.uAxisTwist.value.set(...axisTwist.map((degrees) => (degrees * Math.PI) / 180));
     if (modelSDF) u.uModelSDF.value = modelSDF;
     u.uModelReady.value = modelSDF ? 1 : 0;
 
@@ -253,4 +270,4 @@ class Volume {
   }
 }
 
-export { Volume };
+export { Volume, surfaceOffset };

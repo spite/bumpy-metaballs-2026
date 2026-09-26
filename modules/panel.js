@@ -1,6 +1,29 @@
 import { GUI, random } from "guspira";
 import { environments, normalMaps, presets } from "modules/presets.js";
 import { shapeNames } from "modules/sdf.js";
+import { motionNames } from "modules/blobMotion.js";
+
+const ROUNDED_SHAPES = new Set([
+  "box",
+  "cylinder",
+  "octahedron",
+  "icosahedron",
+  "dodecahedron",
+  "tetrahedron",
+  "suzanne",
+  "sphube",
+  "stella",
+]);
+const TUBE_SHAPES = new Set([
+  "torus",
+  "trefoil",
+  "mobius",
+  "gyroid",
+  "cinquefoil",
+  "torus knot",
+  "arc",
+  "spike ball",
+]);
 
 // Hover text for each control. guspira puts its randomise hint in this same
 // title slot, so the hint is appended at the end of the build instead.
@@ -26,11 +49,17 @@ const DESCRIPTIONS = {
   "Blob count": "How many metaballs are in the field.",
   "Isolation": "The field value the surface is drawn at. Higher puts the surface closer to the blob centres, so the shape shrinks and separates.",
   "Speed": "How fast the blobs move. 0 freezes them, which also collapses them into a degenerate pose.",
+  "Motion": "How the blobs move. Legacy is the original, which travels mostly along one axis and leaves the middle empty. Drift wanders evenly in every direction and fills the middle. Orbit circles the centre on slowly turning paths and gathers into a few larger clumps.",
   "Smoothing": "Blurs the field before polygonising, rounding off detail and merging nearby blobs.",
   "Shape": "A fixed signed-distance shape added to the field alongside the blobs.",
-  "Shape size": "Overall size of that fixed shape.",
-  "Shape thickness": "The tube of a torus, the height of a cylinder, a rounding radius on anything with corners.",
+  "Shape size": "Radius of the sphere, cylinder and torus ring, half the width of the box, the distance to the faces of the polyhedra, and the overall scale of the knots, Mobius band, pretzel, star and Suzanne, half the width of the Goursat tangle and sphube, the radius of the arc and the ball the gyroid is cut to, and how far the star, stella and spikes reach. The tetrahedron reaches as far as the octahedron.",
+  "Shape thickness": "Radius of the tube of the torus, the knots and the arc, the width of the spikes, and half the thickness of the Mobius band, whose edges it also rounds, and of the gyroid's sheet.",
+  "Shape height": "Height of the cylinder.",
+  "Shape rounding": "Radius of the edges and corners of the box, cylinder and polyhedra, from sharp at 0 to a sphere, without changing their size. On Suzanne, how much the model is smoothed; on the sphube, how far it is from a cube towards a sphere.",
   "Twist": "Rotates the field around the cursor, so the surface swirls where the mouse is. The axis is the camera's own, so it always turns in the plane of the screen. 0 is off.",
+  "Twist X": "Twists the whole scene around the X axis: the total turn, in degrees, from one side of the volume to the other.",
+  "Twist Y": "Twists the whole scene around the Y axis: the total turn, in degrees, from one side of the volume to the other.",
+  "Twist Z": "Twists the whole scene around the Z axis: the total turn, in degrees, from one side of the volume to the other.",
   "Twist radius": "How far from the cursor the twist reaches. The angle falls off smoothly to nothing, so there is no seam at the edge.",
 
   // Shading
@@ -114,7 +143,7 @@ const DESCRIPTIONS = {
 // Controls write straight into their uniform; the ones a preset overwrites
 // are collected in `bound` so switching preset can push the values back.
 function buildPanel(app) {
-  const gui = new GUI("Bumpy Metaballs", document.querySelector("#panel"), {
+  const gui = new GUI("Bumpy metaballs 2026", document.querySelector("#panel"), {
     storageKey: "bumpy-metaballs",
   });
 
@@ -348,6 +377,15 @@ function buildPanel(app) {
   });
   bound.push(() => speed.signal.set(app.state.speed));
 
+  const motion = gui.addSelect("Motion", app.state.motion, motionNames, {
+    title: DESCRIPTIONS["Motion"],
+    onChange: (v) => app.setMotion(v),
+  });
+  bound.push(() => {
+    motion.signal.set(app.state.motion);
+    motion.setDisabled(!app.state.blobs);
+  });
+
   const smoothing = gui.addSlider("Smoothing", app.state.smoothing, 0, 1, 0.01, {
     title: DESCRIPTIONS["Smoothing"],
     onChange: (v) => app.setSmoothing(v),
@@ -366,16 +404,49 @@ function buildPanel(app) {
     title: DESCRIPTIONS["Shape size"],
     onChange: (v) => app.setShapeSize(v),
   });
-  bound.push(() => ssize.signal.set(app.state.shapeSize));
+  bound.push(() => {
+    ssize.signal.set(app.state.shapeSize);
+    ssize.setVisible(app.state.shape !== "none");
+  });
 
-  const sthick = gui.addSlider("Shape thickness", app.state.shapeThickness, 0.0, 0.2, 0.001, {
+  const sthick = gui.addSlider("Shape thickness", app.state.shapeThickness, 0.0, 0.3, 0.001, {
     curve: 2,
     title: DESCRIPTIONS["Shape thickness"],
     onChange: (v) => app.setShapeThickness(v),
   });
-  bound.push(() => sthick.signal.set(app.state.shapeThickness));
+  bound.push(() => {
+    sthick.signal.set(app.state.shapeThickness);
+    sthick.setVisible(TUBE_SHAPES.has(app.state.shape));
+  });
+
+  const sheight = gui.addSlider("Shape height", app.state.shapeHeight, 0.01, 0.9, 0.005, {
+    title: DESCRIPTIONS["Shape height"],
+    onChange: (v) => app.setShapeHeight(v),
+  });
+  bound.push(() => {
+    sheight.signal.set(app.state.shapeHeight);
+    sheight.setVisible(app.state.shape === "cylinder");
+  });
+
+  const sround = gui.addSlider("Shape rounding", app.state.shapeRounding, 0.0, 0.4, 0.001, {
+    curve: 2,
+    title: DESCRIPTIONS["Shape rounding"],
+    onChange: (v) => app.setShapeRounding(v),
+  });
+  bound.push(() => {
+    sround.signal.set(app.state.shapeRounding);
+    sround.setVisible(ROUNDED_SHAPES.has(app.state.shape));
+  });
 
   gui.addSeparator();
+
+  ["X", "Y", "Z"].forEach((name, axis) => {
+    const slider = gui.addSlider(`Twist ${name}`, app.state.axisTwist[axis], -360, 360, 1, {
+      title: DESCRIPTIONS[`Twist ${name}`],
+      onChange: (v) => app.setAxisTwist(axis, v),
+    });
+    bound.push(() => slider.signal.set(app.state.axisTwist[axis]));
+  });
 
   const twist = gui.addSlider("Twist", app.state.twistStrength, 0, 4, 0.01, {
     title: DESCRIPTIONS["Twist"],
@@ -670,7 +741,6 @@ function buildPanel(app) {
   return {
     gui,
     sync: () => bound.forEach((update) => update()),
-    randomize: () => gui.randomizeAll(),
   };
 }
 

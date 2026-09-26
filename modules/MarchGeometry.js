@@ -11,13 +11,11 @@ import {
 
 import { triTable } from "modules/triTable.js";
 
-// Instanced so the draw needs no position attribute as long as itself. A
-// multiple of three so no triangle straddles two instances.
+// Must be a multiple of three, or triangles straddle instances.
 const VERTICES_PER_INSTANCE = 96;
 
-// Integers rather than floats because these are indices and -1 is a
-// terminator that must survive the round trip exactly. Column 15 is always a
-// terminator in the table, so it carries the case's vertex count instead.
+// Column 15 holds each case's vertex count, not an edge: the table never uses
+// it.
 function makeTriTableTexture() {
   const data = new Int32Array(256 * 16);
   data.fill(-1);
