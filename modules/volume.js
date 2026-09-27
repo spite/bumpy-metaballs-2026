@@ -232,7 +232,7 @@ class Volume {
     if (twistAxis) u.uTwistAxis.value.copy(twistAxis);
     u.uTwistStrength.value = twistStrength;
     u.uTwistRadius.value = twistRadius;
-    u.uAxisTwist.value.set(...axisTwist.map((degrees) => (degrees * Math.PI) / 180));
+    u.uAxisTwist.value.set(axisTwist[0], axisTwist[1], axisTwist[2]).multiplyScalar(Math.PI / 180);
     if (modelSDF) u.uModelSDF.value = modelSDF;
     u.uModelReady.value = modelSDF ? 1 : 0;
 

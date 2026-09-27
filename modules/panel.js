@@ -1,29 +1,12 @@
 import { GUI, random } from "guspira";
 import { environments, normalMaps, presets } from "modules/presets.js";
-import { shapeNames } from "modules/sdf.js";
+import { shapeNames, shapeUses } from "modules/sdf.js";
 import { motionNames } from "modules/blobMotion.js";
 
-const ROUNDED_SHAPES = new Set([
-  "box",
-  "cylinder",
-  "octahedron",
-  "icosahedron",
-  "dodecahedron",
-  "tetrahedron",
-  "suzanne",
-  "sphube",
-  "stella",
-]);
-const TUBE_SHAPES = new Set([
-  "torus",
-  "trefoil",
-  "mobius",
-  "gyroid",
-  "cinquefoil",
-  "torus knot",
-  "arc",
-  "spike ball",
-]);
+function usedBy(control) {
+  const names = shapeNames.filter((name) => shapeUses(name, control));
+  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0];
+}
 
 // Hover text for each control. guspira puts its randomise hint in this same
 // title slot, so the hint is appended at the end of the build instead.
@@ -52,10 +35,10 @@ const DESCRIPTIONS = {
   "Motion": "How the blobs move. Legacy is the original, which travels mostly along one axis and leaves the middle empty. Drift wanders evenly in every direction and fills the middle. Orbit circles the centre on slowly turning paths and gathers into a few larger clumps.",
   "Smoothing": "Blurs the field before polygonising, rounding off detail and merging nearby blobs.",
   "Shape": "A fixed signed-distance shape added to the field alongside the blobs.",
-  "Shape size": "Radius of the sphere, cylinder and torus ring, half the width of the box, the distance to the faces of the polyhedra, and the overall scale of the knots, Mobius band, pretzel, star and Suzanne, half the width of the Goursat tangle and sphube, the radius of the arc and the ball the gyroid is cut to, and how far the star, stella and spikes reach. The tetrahedron reaches as far as the octahedron.",
-  "Shape thickness": "Radius of the tube of the torus, the knots and the arc, the width of the spikes, and half the thickness of the Mobius band, whose edges it also rounds, and of the gyroid's sheet.",
-  "Shape height": "Height of the cylinder.",
-  "Shape rounding": "Radius of the edges and corners of the box, cylinder and polyhedra, from sharp at 0 to a sphere, without changing their size. On Suzanne, how much the model is smoothed; on the sphube, how far it is from a cube towards a sphere.",
+  "Shape size": "How big the shape is: its radius, half its width or how far it reaches, depending on the shape.",
+  "Shape thickness": `The thickness of a tube, band, sheet or spike. Used by ${usedBy("thickness")}.`,
+  "Shape height": `Height of the shape. Used by ${usedBy("height")}.`,
+  "Shape rounding": `Radius of the edges and corners, from sharp at 0, without changing the size. On Suzanne it smooths the model; on the sphube it goes from a cube to a sphere. Used by ${usedBy("rounding")}.`,
   "Twist": "Rotates the field around the cursor, so the surface swirls where the mouse is. The axis is the camera's own, so it always turns in the plane of the screen. 0 is off.",
   "Twist X": "Twists the whole scene around the X axis: the total turn, in degrees, from one side of the volume to the other.",
   "Twist Y": "Twists the whole scene around the Y axis: the total turn, in degrees, from one side of the volume to the other.",
@@ -416,7 +399,7 @@ function buildPanel(app) {
   });
   bound.push(() => {
     sthick.signal.set(app.state.shapeThickness);
-    sthick.setVisible(TUBE_SHAPES.has(app.state.shape));
+    sthick.setVisible(shapeUses(app.state.shape, "thickness"));
   });
 
   const sheight = gui.addSlider("Shape height", app.state.shapeHeight, 0.01, 0.9, 0.005, {
@@ -425,7 +408,7 @@ function buildPanel(app) {
   });
   bound.push(() => {
     sheight.signal.set(app.state.shapeHeight);
-    sheight.setVisible(app.state.shape === "cylinder");
+    sheight.setVisible(shapeUses(app.state.shape, "height"));
   });
 
   const sround = gui.addSlider("Shape rounding", app.state.shapeRounding, 0.0, 0.4, 0.001, {
@@ -435,7 +418,7 @@ function buildPanel(app) {
   });
   bound.push(() => {
     sround.signal.set(app.state.shapeRounding);
-    sround.setVisible(ROUNDED_SHAPES.has(app.state.shape));
+    sround.setVisible(shapeUses(app.state.shape, "rounding"));
   });
 
   gui.addSeparator();

@@ -171,8 +171,6 @@ class Pipeline {
     this.finalShader = new RawShaderMaterial({
       uniforms: {
         sceneMap: { value: this.aoCompositePass.texture },
-        blueNoise: { value: blueNoiseTexture },
-        blueNoiseSize: { value: BLUE_NOISE_SIZE },
         bloom0: { value: null },
         bloom1: { value: null },
         bloom2: { value: null },

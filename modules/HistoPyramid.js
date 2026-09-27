@@ -181,6 +181,7 @@ class HistoPyramid {
     this.total = null;
     this.gl = null;
     this.readbacks = [];
+    this.values = new Float32Array(4);
   }
 
   setGrid(grid) {
@@ -303,7 +304,7 @@ class HistoPyramid {
     const gl = this.gl;
     if (!gl) return;
 
-    const values = new Float32Array(4);
+    const values = this.values;
     while (this.readbacks.length) {
       const read = this.readbacks[0];
       if (gl.getSyncParameter(read.sync, gl.SYNC_STATUS) !== gl.SIGNALED) break;

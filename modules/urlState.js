@@ -316,10 +316,13 @@ function syncUrl(app, interval = 500) {
   };
 }
 
-// A link preset has to name every field but mat, or selecting it keeps whatever
-// the previous look left in the missing ones.
+// A link preset has to name every field but mat and the geometry, or selecting
+// it keeps whatever the previous look left in the missing ones. Selecting one
+// never applies geometry, so naming it would only mislead.
 function auditPresets(app) {
-  const expected = Object.keys(schema(app)).filter((key) => key !== "mat");
+  const expected = Object.keys(schema(app)).filter(
+    (key) => key !== "mat" && !GEOMETRY_FIELDS.has(key),
+  );
   const names = new Set(presets.map((preset) => preset.name.toLowerCase()));
   const problems = [];
 
@@ -330,6 +333,11 @@ function auditPresets(app) {
     const missing = expected.filter((key) => !fields.has(key));
     if (missing.length) {
       problems.push(`${preset.name} is missing ${missing.join(", ")}`);
+    }
+
+    const ignored = [...fields.keys()].filter((key) => GEOMETRY_FIELDS.has(key));
+    if (ignored.length) {
+      problems.push(`${preset.name} names ${ignored.join(", ")}, which selecting it never applies`);
     }
 
     // A link preset is a valid name here: a url copied from the address bar

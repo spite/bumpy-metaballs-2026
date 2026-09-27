@@ -20,29 +20,36 @@ function legacy(i, time, out, o) {
   out[o + 2] = Math.cos(i + 1.32 * time * 0.1 * Math.sin(0.92 + 0.53 * i)) * 0.27 + 0.5;
 }
 
+// A blob's parameters depend only on its index, so they are drawn once.
+function cached(cache, draw) {
+  return (i) => (cache[i] ??= draw(random(i + 1)));
+}
+
+const driftParams = cached([], (r) =>
+  [0, 1, 2].map(() => ({
+    w1: 0.5 + 0.5 * r(),
+    w2: 0.8 + 0.7 * r(),
+    p1: 2 * Math.PI * r(),
+    p2: 2 * Math.PI * r(),
+  })),
+);
+
+function wave({ w1, w2, p1, p2 }, time) {
+  return 0.5 * (Math.sin(w1 * time + p1) + Math.sin(w2 * time + p2));
+}
+
 function drift(i, time, out, o) {
-  const r = random(i + 1);
-  let x = 0;
-  let y = 0;
-  let z = 0;
-  for (let axis = 0; axis < 3; axis++) {
-    const w1 = 0.5 + 0.5 * r();
-    const w2 = 0.8 + 0.7 * r();
-    const p1 = 2 * Math.PI * r();
-    const p2 = 2 * Math.PI * r();
-    const v = 0.5 * (Math.sin(w1 * time + p1) + Math.sin(w2 * time + p2));
-    if (axis === 0) x = v;
-    else if (axis === 1) y = v;
-    else z = v;
-  }
+  const axes = driftParams(i);
+  const x = wave(axes[0], time);
+  const y = wave(axes[1], time);
+  const z = wave(axes[2], time);
   const scale = 0.34 / Math.max(1, Math.hypot(x, y, z));
   out[o] = 0.5 + x * scale;
   out[o + 1] = 0.5 + y * scale;
   out[o + 2] = 0.5 + z * scale;
 }
 
-function orbit(i, time, out, o) {
-  const r = random(i + 1);
+const orbitParams = cached([], (r) => {
   const radius = 0.05 + 0.25 * Math.cbrt(r());
   const speed = (0.7 + 0.7 * r()) * (r() < 0.5 ? -1 : 1);
   const phase = 2 * Math.PI * r();
@@ -53,35 +60,47 @@ function orbit(i, time, out, o) {
   const cx = 0.5 + 0.16 * (r() - 0.5);
   const cy = 0.5 + 0.16 * (r() - 0.5);
   const cz = 0.5 + 0.16 * (r() - 0.5);
+  return { radius, speed, phase, breathe, precession, nz, na, cx, cy, cz };
+});
+
+function orbit(i, time, out, o) {
+  const { radius, speed, phase, breathe, precession, nz, na, cx, cy, cz } = orbitParams(i);
 
   const ring = Math.sqrt(1 - nz * nz);
   const turn = na + precession * time;
-  const n = [ring * Math.cos(turn), nz, ring * Math.sin(turn)];
+  const nx = ring * Math.cos(turn);
+  const ny = nz;
+  const nw = ring * Math.sin(turn);
 
-  const helper = Math.abs(n[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
-  const u = cross(n, helper);
-  normalize(u);
-  const v = cross(n, u);
+  // u = normalize(n x helper), v = n x u, with helper y unless n is close to it.
+  let ux;
+  let uy;
+  let uz;
+  if (Math.abs(ny) < 0.9) {
+    ux = ny * 0 - nw * 1;
+    uy = nw * 0 - nx * 0;
+    uz = nx * 1 - ny * 0;
+  } else {
+    ux = ny * 0 - nw * 0;
+    uy = nw * 1 - nx * 0;
+    uz = nx * 0 - ny * 1;
+  }
+  const l = Math.hypot(ux, uy, uz);
+  ux /= l;
+  uy /= l;
+  uz /= l;
+  const vx = ny * uz - nw * uy;
+  const vy = nw * ux - nx * uz;
+  const vz = nx * uy - ny * ux;
 
   const angle = speed * time + phase;
   const c = Math.cos(angle);
   const s = Math.sin(angle);
   const rr = radius * (1 + 0.15 * Math.sin(breathe * time + phase));
 
-  out[o] = cx + rr * (u[0] * c + v[0] * s);
-  out[o + 1] = cy + rr * (u[1] * c + v[1] * s);
-  out[o + 2] = cz + rr * (u[2] * c + v[2] * s);
-}
-
-function cross(a, b) {
-  return [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-}
-
-function normalize(a) {
-  const l = Math.hypot(a[0], a[1], a[2]);
-  a[0] /= l;
-  a[1] /= l;
-  a[2] /= l;
+  out[o] = cx + rr * (ux * c + vx * s);
+  out[o + 1] = cy + rr * (uy * c + vy * s);
+  out[o + 2] = cz + rr * (uz * c + vz * s);
 }
 
 const motions = { legacy, drift, orbit };

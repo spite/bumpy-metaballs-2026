@@ -10,8 +10,6 @@ uniform sampler2D bloom3;
 uniform sampler2D bloom4;
 uniform float bloomStrength;
 uniform float bloomRadius;
-uniform sampler2D blueNoise;
-uniform int blueNoiseSize;
 uniform float vignette;
 uniform float grain;
 uniform float dither;
@@ -64,11 +62,6 @@ float interleavedGradient(vec2 p) {
   return fract(52.9829189 * fract(dot(p, vec2(0.06711056, 0.00583715))));
 }
 
-float blueNoiseAt(vec2 p) {
-  // mod rather than %: the offset can push p negative, and % keeps the sign of
-  // the dividend, which would index outside the texture and read back zero
-  return texelFetch(blueNoise, ivec2(mod(p, float(blueNoiseSize))), 0).g;
-}
 
 // Grain must not come from the blue noise texture: it is a 64 pixel tile, and
 // offsetting it a pixel a frame translates the field rigidly, so it reads as

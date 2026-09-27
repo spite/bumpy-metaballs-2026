@@ -27,9 +27,11 @@ import { shader as marchVs } from "shaders/marchVs.js";
 import { OrbitControls } from "third_party/OrbitControls.js";
 import { Pipeline } from "modules/Pipeline.js";
 import { BLUE_NOISE_SIZE, blueNoiseTexture } from "modules/blueNoiseTexture.js";
-import { shapeNames } from "modules/sdf.js";
+import { shapeNames, shapeIndex } from "modules/sdf.js";
 import { loadMeshField, smoothMeshField } from "modules/meshField.js";
 import { trackLoad } from "modules/loading.js";
+import { randomizeLook } from "modules/randomize.js";
+import { trackPointer } from "modules/pointer.js";
 import { environments, normalMaps, presets } from "modules/presets.js";
 import { buildPanel } from "modules/panel.js";
 import {
@@ -204,9 +206,11 @@ function loadTexture(url, wrapping) {
 
   // Set every time, not just on the miss: wrapping belongs to the use, not the
   // file, so a second use of one file would keep the first use's mode.
+  // Not before the image arrives: three warns on every draw until then, and the
+  // loader flags the texture itself when it lands.
   if (texture.wrapS !== wrapping) {
     texture.wrapS = texture.wrapT = wrapping;
-    texture.needsUpdate = true;
+    if (texture.image) texture.needsUpdate = true;
   }
 
   return texture;
@@ -684,6 +688,7 @@ const app = {
   setColor,
   envUniforms,
   coreFieldResolution,
+  modelLoaded: () => modelField !== null,
   stats,
   outerMaterial,
   coreMaterial,
@@ -715,74 +720,11 @@ document.querySelector("#switchMaterial").addEventListener("click", (e) => {
   applyPreset(state.preset + 1);
 });
 
-const between = (min, max) => min + Math.random() * (max - min);
-const pick = (list) => list[Math.floor(Math.random() * list.length)];
-
-// Ranges picked for looking good, not the sliders' full ranges. Suzanne only
-// once built: building it freezes the page for seconds.
-function randomizeScene() {
-  const shapes = shapeNames.filter((name) => name !== "suzanne" || modelField);
-  const shape = Math.random() < 0.35 ? "none" : pick(shapes);
-  setShape(shape);
-
-  setBlobs(shape === "none" || Math.random() < 0.85);
-  setNumBlobs(Math.round(between(8, 32)));
-  setMotion(pick(motionNames));
-  setSmoothing(Math.random() < 0.7 ? 0 : between(0.1, 0.5));
-  setTwistStrength(Math.random() < 0.25 ? between(0.5, 2) : 0);
-  for (let axis = 0; axis < 3; axis++) setAxisTwist(axis, 0);
-  if (Math.random() < 0.25) {
-    setAxisTwist(Math.floor(Math.random() * 3), Math.round(between(90, 270) * (Math.random() < 0.5 ? -1 : 1)));
-  }
-
-  if (shape === "torus") {
-    setShapeSize(between(0.18, 0.32));
-    setShapeThickness(between(0.03, 0.1));
-  } else if (shape === "trefoil") {
-    setShapeSize(between(0.25, 0.4));
-    setShapeThickness(between(0.03, 0.08));
-  } else if (shape === "mobius") {
-    setShapeSize(between(0.18, 0.3));
-    setShapeThickness(between(0.01, 0.05));
-  } else if (shape === "cylinder") {
-    setShapeSize(between(0.1, 0.22));
-    setShapeHeight(between(0.2, 0.6));
-    setShapeRounding(between(0, 0.1));
-  } else if (shape === "gyroid") {
-    setShapeSize(between(0.25, 0.4));
-    setShapeThickness(between(0.03, 0.07));
-  } else if (["cinquefoil", "torus knot"].includes(shape)) {
-    setShapeSize(between(0.25, 0.38));
-    setShapeThickness(between(0.02, 0.05));
-  } else if (shape === "arc") {
-    setShapeSize(between(0.18, 0.3));
-    setShapeThickness(between(0.04, 0.1));
-  } else if (["goursat", "pretzel", "star"].includes(shape)) {
-    setShapeSize(between(0.25, 0.4));
-  } else if (shape === "spike ball") {
-    setShapeSize(between(0.3, 0.42));
-    setShapeThickness(between(0.025, 0.05));
-  } else if (shape === "stella") {
-    setShapeSize(between(0.3, 0.42));
-    setShapeRounding(between(0, 0.04));
-  } else if (shape === "box") {
-    setShapeSize(between(0.12, 0.25));
-    setShapeRounding(between(0, 0.12));
-  } else if (shape !== "none") {
-    setShapeSize(between(0.15, 0.3));
-    setShapeRounding(between(0, 0.12));
-  }
-}
-
-function randomizeLook() {
-  const others = presets.map((_, i) => i).filter((i) => i !== state.preset);
-  applyPreset(pick(others));
-  randomizeScene();
-  if (panel) panel.sync();
-}
-
 bindKey("Space", () => setPaused(!state.paused), { preventDefault: true });
-bindKey("KeyR", randomizeLook);
+bindKey("KeyR", () => {
+  randomizeLook(app);
+  panel?.sync();
+});
 bindKey("KeyF", toggleFullscreen);
 bindKey("ArrowRight", () => applyPreset(state.preset + 1));
 bindKey("ArrowLeft", () => applyPreset(state.preset - 1));
@@ -836,40 +778,11 @@ function resize() {
 window.addEventListener("resize", resize);
 resize();
 
-// The ray through the cursor is intersected with the plane through the origin
-// facing the camera, which is where the blobs live.
-{
-  const ndc = new Vector2();
-  const ray = new Vector3();
-  const forward = new Vector3();
-  const toOrigin = new Vector3();
-  const hit = new Vector3();
-
-  const move = (event) => {
-    const rect = renderer.domElement.getBoundingClientRect();
-    if (!rect.width || !rect.height) return;
-
-    ndc.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    ndc.y = -(((event.clientY - rect.top) / rect.height) * 2 - 1);
-
-    ray.set(ndc.x, ndc.y, 0.5).unproject(camera).sub(camera.position).normalize();
-
-    camera.getWorldDirection(forward);
-    toOrigin.set(0, 0, 0).sub(camera.position);
-
-    const denom = ray.dot(forward);
-    if (Math.abs(denom) < 1e-6) return;
-
-    hit.copy(ray).multiplyScalar(toOrigin.dot(forward) / denom).add(camera.position);
-
-    twistCenter.copy(hit).multiplyScalar(0.5).addScalar(0.5);
-    twistAxis.copy(forward);
-
-    if (state.twistStrength !== 0) twisted = true;
-  };
-
-  renderer.domElement.addEventListener("pointermove", move);
-}
+trackPointer(renderer.domElement, camera, (hit, forward) => {
+  twistCenter.copy(hit).multiplyScalar(0.5).addScalar(0.5);
+  twistAxis.copy(forward);
+  if (state.twistStrength !== 0) twisted = true;
+});
 
 // Loop
 
@@ -919,7 +832,7 @@ function render() {
       numBlobs: state.numBlobs,
       blobs: state.blobs,
       motion: state.motion,
-      shape: state.shape === "none" ? 0 : shapeNames.indexOf(state.shape) + 1,
+      shape: shapeIndex(state.shape),
       shapeSize: state.shapeSize,
       shapeThickness: state.shapeThickness,
       shapeRounding: state.shapeRounding,
