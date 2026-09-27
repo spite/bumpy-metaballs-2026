@@ -95,6 +95,7 @@ class Pipeline {
         isolation: { value: 80 },
         fieldTexture: { value: null },
         fieldTexel: { value: 1 / 50 },
+        fieldScale: { value: 1 },
       },
       vertexShader: orthoVs,
       fragmentShader: aoFs,
@@ -280,25 +281,7 @@ class Pipeline {
       const autoClear = renderer.autoClear;
       renderer.autoClear = false;
 
-      // Far wall first, so what the near wall later reads has the inside of the
-      // shell in it. Depth sorts the rest out: along any ray the order is near
-      // wall, core, far wall.
-      if (this.farWall && this.transmissiveMaterial) {
-        this.transmissiveMaterial.side = BackSide;
-        renderer.setRenderTarget(this.renderTarget);
-        this.timer?.begin("scene");
-        renderer.render(scene, camera);
-        this.timer?.end();
-        renderer.setRenderTarget(null);
-        this.transmissiveMaterial.side = FrontSide;
-      }
-
-      // The occlusion has to be applied to this copy here, not at the end of the
-      // chain: by then the near wall has overwritten the G-buffer with the shell,
-      // so the core is no longer in it to be occluded. Right now the G-buffer does
-      // hold the core. Seen directly rather than through glass the core is still in
-      // the G-buffer at the end, so neither path misses it and neither gets it
-      // twice.
+      // Before the walls: the near wall overwrites the core in the G-buffer.
       const occludeCore =
         this.coreOcclusion && this.aoResolveShader.uniforms.strength.value > 0;
 
@@ -311,11 +294,29 @@ class Pipeline {
         this.timer?.end();
       }
 
-      this.copyShader.uniforms.inputTexture.value = occludeCore
-        ? this.aoCompositePass.texture
-        : this.color;
-      this.copyPass.render(renderer);
-      this.copyShader.uniforms.inputTexture.value = null;
+      const copyBackdrop = () => {
+        this.copyShader.uniforms.inputTexture.value = occludeCore
+          ? this.aoCompositePass.texture
+          : this.color;
+        this.copyPass.render(renderer);
+        this.copyShader.uniforms.inputTexture.value = null;
+      };
+
+      // Refreshed before each wall, or it shows last frame's image as a ghost.
+      copyBackdrop();
+
+      if (this.farWall && this.transmissiveMaterial) {
+        this.transmissiveMaterial.side = BackSide;
+        renderer.setRenderTarget(this.renderTarget);
+        this.timer?.begin("scene");
+        renderer.render(scene, camera);
+        this.timer?.end();
+        renderer.setRenderTarget(null);
+        this.transmissiveMaterial.side = FrontSide;
+
+        if (occludeCore) this.aoCompositePass.render(renderer);
+        copyBackdrop();
+      }
 
       renderer.setRenderTarget(this.renderTarget);
       this.timer?.begin("scene");

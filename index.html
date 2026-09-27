@@ -7,23 +7,47 @@
 
     <meta
       name="description"
-      content="Bumpy metaballs 2026 | Isosurface with Marching Cubes, bump mapping with normal mapping and triplanar mapping, shading with a MatCap shader."
+      content="Metaballs polygonised on the GPU with marching cubes, triplanar bump mapping, glass, occlusion and dozens of materials to explore."
     />
+    <link
+      rel="canonical"
+      href="https://spite.github.io/bumpy-metaballs-2026/"
+    />
+
     <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Bumpy metaballs 2026" />
     <meta
       property="og:url"
-      content="https://www.clicktorelease.com/code/bumpy-metaballs"
+      content="https://spite.github.io/bumpy-metaballs-2026/"
     />
     <meta property="og:title" content="Bumpy metaballs 2026" />
     <meta
       property="og:description"
-      content="Bumpy metaballs 2026 | Isosurface with Marching Cubes, bump mapping with normal mapping and triplanar mapping, shading with a MatCap shader."
+      content="Metaballs polygonised on the GPU with marching cubes, triplanar bump mapping, glass, occlusion and dozens of materials to explore."
     />
     <meta
       property="og:image"
-      content="https://www.clicktorelease.com/code/bumpy-metaballs/assets/thumb.jpg"
+      content="https://spite.github.io/bumpy-metaballs-2026/assets/og.jpg"
     />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="Glossy metaballs with a bumpy surface"
+    />
+
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@thespite" />
+    <meta name="twitter:creator" content="@thespite" />
+    <meta name="twitter:title" content="Bumpy metaballs 2026" />
+    <meta
+      name="twitter:description"
+      content="Metaballs polygonised on the GPU with marching cubes, triplanar bump mapping, glass, occlusion and dozens of materials to explore."
+    />
+    <meta
+      name="twitter:image"
+      content="https://spite.github.io/bumpy-metaballs-2026/assets/og.jpg"
+    />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -57,57 +81,16 @@
     <div id="container"></div>
     <div id="panel"></div>
 
-    <div id="options">
+    <div id="help">
       <p>
-        <b class="title">Bumpy metaballs 2026</b> | Drag to rotate, scroll to zoom, space to
-        pause, R to randomize, Tab to hide the interface.
-        <a class="button" href="#" id="fullscreenBtn">Go fullscreen</a>
-      </p>
-      <div id="loading" role="status" aria-live="polite" hidden>
-        <span class="loading-spinner"></span>
-        <span class="loading-label"></span>
-      </div>
-    </div>
-
-    <div id="switch">
-      <p>
-        Grossed out? <b>There are more materials!</b><br />
-        <a href="#" id="switchMaterial" class="button">Try another one!</a>
-      </p>
-    </div>
-
-    <div id="intro">
-      <p>
-        <b>Isosurface</b> created with <b>Marching Cubes</b>, and bump added with
-        normal mapping.
+        Drag to rotate, scroll to zoom, space to pause, R to randomize, F or
+        double-click for fullscreen, Tab to hide the interface.
       </p>
       <p>
-        The metaballs don't have generated UV coordinates, and tangents can't be
-        calculated with the usual method because it relies on texture
-        coordinates.
+        The Scene tab has more shapes to add to the blobs, and with its Twist
+        turned up, moving the cursor over them swirls them around it.
       </p>
-      <p>
-        The triplanar mapping explained in this
-        <a
-          href="https://developer.nvidia.com/gpugems/gpugems3/part-i-geometry/chapter-1-generating-complex-procedural-terrains-using-gpu"
-          target="_blank"
-          rel="noopener noreferrer"
-          >GPU Gems 3 article</a
-        >
-        supplies them instead: each of the three projections carries its own
-        tangent frame, so the normal map can be applied in the fragment shader
-        with no UVs at all.
-      </p>
-      <p>
-        Shading is the same MatCap as
-        <a
-          href="https://www.clicktorelease.com/code/spherical-normal-mapping/"
-          target="_blank"
-          rel="noopener noreferrer"
-          >Spherical Environment Mapping</a
-        >, now with ambient occlusion, bloom and chromatic aberration on top.
-      </p>
-      <p>
+      <p class="credits">
         Code by Jaume Sánchez
         <a
           href="https://www.twitter.com/thespite"
@@ -118,8 +101,23 @@
         using
         <a href="https://threejs.org" target="_blank" rel="noopener noreferrer"
           >three.js</a
+        >.<br />
+        Source on
+        <a
+          href="https://github.com/spite/bumpy-metaballs-2026"
+          target="_blank"
+          rel="noopener noreferrer"
+          >GitHub</a
         >.
       </p>
+      <a class="button" href="#" id="fullscreenBtn">Go fullscreen</a>
+    </div>
+
+    <div id="options">
+      <div id="loading" role="status" aria-live="polite" hidden>
+        <span class="loading-spinner"></span>
+        <span class="loading-label"></span>
+      </div>
     </div>
   </body>
 </html>

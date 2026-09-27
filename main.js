@@ -19,7 +19,7 @@ import {
 import { bindKey } from "guspira";
 import { RGBELoader } from "third_party/RGBELoader.js";
 import { environmentLight } from "modules/sh.js";
-import { Volume } from "modules/volume.js";
+import { Volume, surfaceOffset } from "modules/volume.js";
 import { MarchGeometry, makeTriTableTexture } from "modules/MarchGeometry.js";
 import { HistoPyramid } from "modules/HistoPyramid.js";
 import { motionNames } from "modules/blobMotion.js";
@@ -27,12 +27,12 @@ import { shader as marchVs } from "shaders/marchVs.js";
 import { OrbitControls } from "third_party/OrbitControls.js";
 import { Pipeline } from "modules/Pipeline.js";
 import { BLUE_NOISE_SIZE, blueNoiseTexture } from "modules/blueNoiseTexture.js";
-import { shapeNames, shapeIndex } from "modules/sdf.js";
+import { shapeNames, shapeIndex, fitShape } from "modules/sdf.js";
 import { loadMeshField, smoothMeshField } from "modules/meshField.js";
-import { trackLoad } from "modules/loading.js";
+import { trackLoad, idle } from "modules/loading.js";
 import { randomizeLook } from "modules/randomize.js";
 import { trackPointer } from "modules/pointer.js";
-import { environments, normalMaps, presets } from "modules/presets.js";
+import { environments, normalMaps, presets, findPreset } from "modules/presets.js";
 import { buildPanel } from "modules/panel.js";
 import {
   GEOMETRY_FIELDS,
@@ -71,6 +71,8 @@ const state = {
   shapeThickness: 0.055,
   shapeRounding: 0.14,
   shapeHeight: 0.28,
+  shapeWidth: 0.1,
+  shapeAngle: 252,
   outerNormalMap: normalMaps[0].name,
   innerNormalMap: normalMaps[0].name,
   twistStrength: 0,
@@ -342,10 +344,8 @@ function setColor(uniform, r, g, b) {
 // concatenating would let the defaults win over the preset.
 function linkBase(preset) {
   const fields = new URLSearchParams(preset.url);
-  const named = (fields.get("mat") ?? "").toLowerCase();
-  const isBlock = presets.some(
-    (other) => !other.url && other.name.toLowerCase() === named,
-  );
+  const named = presets[findPreset(fields.get("mat") ?? "")];
+  const isBlock = named !== undefined && !named.url;
 
   if (isBlock) return preset.url;
 
@@ -595,6 +595,16 @@ function setShapeHeight(value) {
   dirty = true;
 }
 
+function setShapeWidth(value) {
+  state.shapeWidth = value;
+  dirty = true;
+}
+
+function setShapeAngle(value) {
+  state.shapeAngle = value;
+  dirty = true;
+}
+
 function setMotion(name) {
   state.motion = motionNames.includes(name) ? name : "drift";
   dirty = true;
@@ -682,9 +692,10 @@ const app = {
   setShapeThickness,
   setShapeRounding,
   setShapeHeight,
+  setShapeWidth,
+  setShapeAngle,
   setCoreOcclusion,
   setFarWall,
-  setPaused,
   setColor,
   envUniforms,
   coreFieldResolution,
@@ -707,7 +718,7 @@ for (const problem of auditPresets(app)) {
   console.warn(`[preset] ${problem}`);
 }
 
-applyPreset(0);
+applyPreset(Math.max(0, presets.findIndex((p) => p.name === "Blood Ice")));
 
 panel = buildPanel(app);
 
@@ -715,15 +726,20 @@ if (readUrl(app)) panel.sync();
 
 const writeUrl = syncUrl(app);
 
-document.querySelector("#switchMaterial").addEventListener("click", (e) => {
-  e.preventDefault();
-  applyPreset(state.preset + 1);
-});
-
 bindKey("Space", () => setPaused(!state.paused), { preventDefault: true });
+const BOUNCE_SECONDS = 2;
+let bounceStart = -Infinity;
+
+function bounceScale(now) {
+  const t = (now - bounceStart) / 1000;
+  if (t >= BOUNCE_SECONDS) return 1;
+  return 1 - 0.35 * Math.exp(-2.8 * t) * Math.cos(2 * Math.PI * 2.6 * t);
+}
+
 bindKey("KeyR", () => {
   randomizeLook(app);
   panel?.sync();
+  idle().then(() => (bounceStart = performance.now()));
 });
 bindKey("KeyF", toggleFullscreen);
 bindKey("ArrowRight", () => applyPreset(state.preset + 1));
@@ -827,16 +843,33 @@ function render() {
     }
 
     volume.setSize(state.resolution);
+    const fitted = fitShape(
+      state.shape,
+      {
+        size: state.shapeSize,
+        thickness: state.shapeThickness,
+        height: state.shapeHeight,
+        rounding: state.shapeRounding,
+        width: state.shapeWidth,
+      },
+      {
+        offset: surfaceOffset(state.numBlobs, state.isolation),
+        minThickness: 1 / state.resolution,
+      },
+    );
+
     volume.update(renderer, {
       time,
       numBlobs: state.numBlobs,
       blobs: state.blobs,
       motion: state.motion,
       shape: shapeIndex(state.shape),
-      shapeSize: state.shapeSize,
-      shapeThickness: state.shapeThickness,
-      shapeRounding: state.shapeRounding,
-      shapeHeight: state.shapeHeight,
+      shapeSize: fitted.size,
+      shapeThickness: fitted.thickness,
+      shapeRounding: fitted.rounding,
+      shapeHeight: fitted.height,
+      shapeWidth: fitted.width,
+      shapeAngle: state.shapeAngle,
       isolation: state.isolation,
       smoothing: state.smoothing,
       twistCenter,
@@ -882,6 +915,11 @@ function render() {
   corePyramid.poll();
   marchGeometry.setVertexCount(shellPyramid.vertexBudget);
   coreMarchGeometry.setVertexCount(core.visible ? corePyramid.vertexBudget : 0);
+
+  const scale = bounceScale(now);
+  mesh.scale.setScalar(scale);
+  core.scale.setScalar(scale);
+  pipeline.aoShader.uniforms.fieldScale.value = scale;
 
   controls.update();
   writeUrl(now);

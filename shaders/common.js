@@ -31,12 +31,6 @@ vec3 linearToSRGB(vec3 rgb) {
 }
 `;
 
-const tonemap = `
-vec3 tonemap(vec3 c) {
-  return c / (c + vec3(1.0));
-}
-`;
-
 const viewDepth = `
 float viewDepth(float dist, float near, float far) {
   return clamp((dist - near) / (far - near), 1e-3, 1.0);
@@ -204,7 +198,6 @@ vec4 textureCubeUV( sampler2D envMapSampler, vec3 sampleDir, float roughness ) {
 export {
   environment,
   linearToSRGB,
-  tonemap,
   mrtOutputs,
   sRGBToLinear,
   triplanarNormal,

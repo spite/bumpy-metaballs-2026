@@ -143,9 +143,8 @@ float sdKnot(vec3 p, float size, float thickness, float reach, int curve, float 
 
 // The 0.8 corrects for the twisting frame not being a rigid motion, so the box
 // distance measured in it overstates the real one.
-float sdMobius(vec3 p, float size, float thickness) {
+float sdMobius(vec3 p, float size, float thickness, float width) {
   float radius = size;
-  float width = size * 0.4;
   float rounding = min(thickness, width);
 
   float angle = atan(p.y, p.x);
@@ -224,8 +223,9 @@ float sdGyroid(vec3 p, float radius, float thickness) {
   return mix(ball, sheet, h) + k * h * (1.0 - h);
 }
 
-float sdArc(vec3 p, float radius, float thickness) {
-  const vec2 opening = vec2(0.8084964, -0.5885011);
+// span is how much of the ring is kept, in radians.
+float sdArc(vec3 p, float radius, float thickness, float span) {
+  vec2 opening = vec2(sin(0.5 * span), cos(0.5 * span));
   p.x = abs(p.x);
   float k = opening.y * p.x > opening.x * p.y ? dot(p.xy, opening) : length(p.xy);
   return sqrt(dot(p, p) + radius * radius - 2.0 * radius * k) - thickness;
@@ -391,7 +391,7 @@ float shapeDistance(vec3 p, float size, float thickness, float offset) {
   }
 
   if (uShape == ${shapeIndex("trefoil")}) return sdKnot(p, size + offset, thickness, reach, 0, 0.0, 0.0) + offset;
-  if (uShape == ${shapeIndex("mobius")}) return sdMobius(p, size + offset, thickness) + offset;
+  if (uShape == ${shapeIndex("mobius")}) return sdMobius(p, size + offset, thickness, uShapeWidth) + offset;
   if (uShape == ${shapeIndex("suzanne")}) return sdModel(p, size, offset);
 
   float full = size + offset;
@@ -400,7 +400,7 @@ float shapeDistance(vec3 p, float size, float thickness, float offset) {
   if (uShape == ${shapeIndex("gyroid")}) return sdGyroid(p, full, thickness) + offset;
   if (uShape == ${shapeIndex("cinquefoil")}) return sdKnot(p, full, thickness, reach, 1, 2.0, 5.0) + offset;
   if (uShape == ${shapeIndex("torus knot")}) return sdKnot(p, full, thickness, reach, 1, 3.0, 4.0) + offset;
-  if (uShape == ${shapeIndex("arc")}) return sdArc(p, full, thickness) + offset;
+  if (uShape == ${shapeIndex("arc")}) return sdArc(p, full, thickness, radians(uShapeAngle)) + offset;
   if (uShape == ${shapeIndex("spike ball")}) return sdSpikeBall(p, full, thickness, reach) + offset;
   if (uShape == ${shapeIndex("pretzel")}) return sdPretzel(p, full) + offset;
   if (uShape == ${shapeIndex("star")}) return sdRoundStar(p, full) + offset;

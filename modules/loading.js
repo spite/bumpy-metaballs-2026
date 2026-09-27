@@ -3,6 +3,7 @@
 const DELAY = 250;
 
 const pending = new Set();
+let waiting = [];
 
 function update() {
   const element = document.getElementById("loading");
@@ -34,6 +35,10 @@ function trackLoad(label, promise, { immediate = false } = {}) {
     clearTimeout(entry.timer);
     pending.delete(entry);
     update();
+    if (!pending.size) {
+      waiting.forEach((resolve) => resolve());
+      waiting = [];
+    }
   };
   promise.then(done, done);
 
@@ -46,4 +51,8 @@ function nextPaint() {
   return new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 0)));
 }
 
-export { trackLoad, nextPaint };
+function idle() {
+  return pending.size ? new Promise((resolve) => waiting.push(resolve)) : Promise.resolve();
+}
+
+export { trackLoad, nextPaint, idle };

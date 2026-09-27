@@ -1,6 +1,7 @@
 import { GUI, random } from "guspira";
 import { environments, normalMaps, presets } from "modules/presets.js";
-import { shapeNames, shapeUses } from "modules/sdf.js";
+import { shapeNames, shapeUses, shapeMaxSize } from "modules/sdf.js";
+import { surfaceOffset } from "modules/volume.js";
 import { motionNames } from "modules/blobMotion.js";
 
 function usedBy(control) {
@@ -35,9 +36,11 @@ const DESCRIPTIONS = {
   "Motion": "How the blobs move. Legacy is the original, which travels mostly along one axis and leaves the middle empty. Drift wanders evenly in every direction and fills the middle. Orbit circles the centre on slowly turning paths and gathers into a few larger clumps.",
   "Smoothing": "Blurs the field before polygonising, rounding off detail and merging nearby blobs.",
   "Shape": "A fixed signed-distance shape added to the field alongside the blobs.",
-  "Shape size": "How big the shape is: its radius, half its width or how far it reaches, depending on the shape.",
+  "Shape size": "How big the shape is: its radius, half its width or how far it reaches, depending on the shape. The range stops where the shape would leave the volume, and settings that would still push it out scale it down to fit.",
   "Shape thickness": `The thickness of a tube, band, sheet or spike. Used by ${usedBy("thickness")}.`,
   "Shape height": `Height of the shape. Used by ${usedBy("height")}.`,
+  "Shape width": `Width of the band. Used by ${usedBy("width")}.`,
+  "Shape angle": `How much of the ring is kept, in degrees. Used by ${usedBy("angle")}.`,
   "Shape rounding": `Radius of the edges and corners, from sharp at 0, without changing the size. On Suzanne it smooths the model; on the sphube it goes from a cube to a sphere. Used by ${usedBy("rounding")}.`,
   "Twist": "Rotates the field around the cursor, so the surface swirls where the mouse is. The axis is the camera's own, so it always turns in the plane of the screen. 0 is off.",
   "Twist X": "Twists the whole scene around the X axis: the total turn, in degrees, from one side of the volume to the other.",
@@ -130,6 +133,11 @@ function buildPanel(app) {
     storageKey: "bumpy-metaballs",
   });
 
+  gui.rows.prepend(document.getElementById("help"));
+
+  // Overrides the remembered open state, which would otherwise win.
+  if (matchMedia("(max-width: 600px)").matches) gui.rowsExpanded.set(false);
+
   const mat = app.material.uniforms;
   const bg = app.backgroundMaterial.uniforms;
   const ao = app.pipeline.aoShader.uniforms;
@@ -140,37 +148,6 @@ function buildPanel(app) {
   const core = app.coreMaterial.uniforms;
 
   const bound = [];
-
-  // guspira's own randomize runs from a point to the end of the panel, so each
-  // tab keeps its own bounds for its button.
-  const tabs = [];
-
-  function beginTab(name, { randomize = true } = {}) {
-    const tabIndex = gui._controllers.length;
-    gui.addTab(name);
-
-    const entry = { tabIndex };
-    if (randomize) gui.addButton("Randomize", () => rollTab(entry));
-    entry.from = gui._controllers.length;
-
-    // Every tab is recorded, button or not: a roll runs to the next tab's first
-    // control, so a tab left out would leave the one before it rolling over
-    // controls that are not its own.
-    tabs.push(entry);
-  }
-
-  function rollTab(entry) {
-    const i = tabs.indexOf(entry);
-    const to = i + 1 < tabs.length ? tabs[i + 1].tabIndex : gui._controllers.length;
-
-    for (let k = entry.from; k < to; k++) {
-      const c = gui._controllers[k];
-      if (!c.randomize || c.row?.classList.contains("disabled")) continue;
-      c.randomize();
-    }
-
-    bound.forEach((update) => update());
-  }
 
   // Inside a brightness band: unconstrained, both ends can land dark at once.
   function randomColor(minL, maxL) {
@@ -264,67 +241,7 @@ function buildPanel(app) {
   material.randomize = null;
   bound.push(() => material.signal.set(presets[app.state.preset].name));
 
-  beginTab("Scene");
-
-  addColorRow("Sky", bg.sky, { light: [0.45, 0.85] });
-  addColorRow("Ground", bg.ground, { light: [0.15, 0.55] });
-  const environment = gui.addSelect(
-    "Environment",
-    app.state.environment,
-    environments.map((e) => e.name),
-    {
-    title: DESCRIPTIONS["Environment"], onChange: (name) => app.setEnvironment(name) },
-  );
-  bound.push(() => environment.signal.set(app.state.environment));
-
-  addUniformSlider("Env intensity", app.envUniforms.envIntensity, 0, 3, 0.01);
-
-  gui.addSection("Debug");
-
-  const term = gui.addSelect("Term", app.state.term, app.terms, {
-    title: DESCRIPTIONS["Term"],
-    onChange: (name) => app.setTerm(name),
-  });
-  term.randomize = null;
-  bound.push(() => term.signal.set(app.state.term));
-
-  const wire = gui.addCheckbox("Wireframe", app.state.wireframe, {
-    title: DESCRIPTIONS["Wireframe"],
-    onChange: (v) => app.setWireframe(v),
-  });
-  wire.randomize = null;
-  bound.push(() => wire.signal.set(app.state.wireframe));
-
-  const debugView = gui.addSelect(
-    "View",
-    app.state.debug,
-    ["off", ...Object.keys(app.pipeline.debugViews)],
-    {
-    title: DESCRIPTIONS["View"], onChange: (name) => app.setDebug(name) },
-  );
-  debugView.randomize = null;
-  bound.push(() => debugView.signal.set(app.state.debug));
-
-  // Logarithmic, 0.1 to 1000: a view space position reads around 5 and a
-  // normalised depth needs hundreds before it bands.
-  const scaleU = app.pipeline.debugShader.uniforms.debugScale;
-  const toSlider = (v) => Math.log10(Math.max(v, 0.1)) / 4 + 0.25;
-  const fromSlider = (t) => Math.pow(10, (t - 0.25) * 4);
-
-  const debugScale = gui.addSlider("View scale", toSlider(scaleU.value), 0, 1, 0.001, {
-    title: DESCRIPTIONS["View scale"],
-    onChange: (t) => (scaleU.value = fromSlider(t)),
-  });
-  debugScale.randomize = null;
-  bound.push(() => debugScale.signal.set(toSlider(scaleU.value)));
-
-  const SCALED = new Set([2, 3, 4, 5]);
-  bound.push(() => {
-    const view = app.pipeline.debugViews[app.state.debug];
-    debugScale.setDisabled(!view || !SCALED.has(view.mode));
-  });
-
-  beginTab("Shape");
+  gui.addTab("Scene");
 
   const resolution = gui.addSlider("Resolution", app.state.resolution, 20, 120, 2, {
     title: DESCRIPTIONS["Resolution"],
@@ -388,8 +305,15 @@ function buildPanel(app) {
     onChange: (v) => app.setShapeSize(v),
   });
   bound.push(() => {
-    ssize.signal.set(app.state.shapeSize);
-    ssize.setVisible(app.state.shape !== "none");
+    const s = app.state;
+    const max = shapeMaxSize(
+      s.shape,
+      { thickness: s.shapeThickness, height: s.shapeHeight, rounding: s.shapeRounding, width: s.shapeWidth },
+      surfaceOffset(s.numBlobs, s.isolation),
+    );
+    ssize.el.max = Math.max(0.06, Math.min(0.45, Math.floor(max / 0.005) * 0.005));
+    ssize.signal.set(s.shapeSize);
+    ssize.setVisible(s.shape !== "none");
   });
 
   const sthick = gui.addSlider("Shape thickness", app.state.shapeThickness, 0.0, 0.3, 0.001, {
@@ -409,6 +333,25 @@ function buildPanel(app) {
   bound.push(() => {
     sheight.signal.set(app.state.shapeHeight);
     sheight.setVisible(shapeUses(app.state.shape, "height"));
+  });
+
+  const swidth = gui.addSlider("Shape width", app.state.shapeWidth, 0.01, 0.3, 0.001, {
+    curve: 2,
+    title: DESCRIPTIONS["Shape width"],
+    onChange: (v) => app.setShapeWidth(v),
+  });
+  bound.push(() => {
+    swidth.signal.set(app.state.shapeWidth);
+    swidth.setVisible(shapeUses(app.state.shape, "width"));
+  });
+
+  const sangle = gui.addSlider("Shape angle", app.state.shapeAngle, 30, 350, 1, {
+    title: DESCRIPTIONS["Shape angle"],
+    onChange: (v) => app.setShapeAngle(v),
+  });
+  bound.push(() => {
+    sangle.signal.set(app.state.shapeAngle);
+    sangle.setVisible(shapeUses(app.state.shape, "angle"));
   });
 
   const sround = gui.addSlider("Shape rounding", app.state.shapeRounding, 0.0, 0.4, 0.001, {
@@ -445,6 +388,21 @@ function buildPanel(app) {
     twistRadius.signal.set(app.state.twistRadius);
     twistRadius.setDisabled(app.state.twistStrength === 0);
   });
+
+  gui.addSeparator();
+
+  addColorRow("Sky", bg.sky, { light: [0.45, 0.85] });
+  addColorRow("Ground", bg.ground, { light: [0.15, 0.55] });
+  const environment = gui.addSelect(
+    "Environment",
+    app.state.environment,
+    environments.map((e) => e.name),
+    {
+    title: DESCRIPTIONS["Environment"], onChange: (name) => app.setEnvironment(name) },
+  );
+  bound.push(() => environment.signal.set(app.state.environment));
+
+  addUniformSlider("Env intensity", app.envUniforms.envIntensity, 0, 3, 0.01);
 
   function addSurface(which) {
     const u = which === "inner" ? core : mat;
@@ -518,10 +476,10 @@ function buildPanel(app) {
     });
   }
 
-  beginTab("Outside");
+  gui.addTab("Outside");
   addSurface("outer");
 
-  beginTab("Inside");
+  gui.addTab("Inside");
   addSurface("inner");
 
   gui.addSection("Glass");
@@ -560,7 +518,7 @@ function buildPanel(app) {
   farWall.randomize = null;
   bound.push(() => farWall.signal.set(app.state.farWall));
 
-  beginTab("Occlusion");
+  gui.addTab("Occlusion");
 
   addUniformSlider("Strength", aoOut.strength, 0, 10, 0.05);
   addUniformSlider("Radius", ao.radius, 0, 120, 1);
@@ -583,13 +541,73 @@ function buildPanel(app) {
   });
   bound.push(() => coreAo.signal.set(app.state.coreOcclusion));
 
-  beginTab("Stats", { randomize: false });
+  gui.addTab("Debug");
+
+  const term = gui.addSelect("Term", app.state.term, app.terms, {
+    title: DESCRIPTIONS["Term"],
+    onChange: (name) => app.setTerm(name),
+  });
+  term.randomize = null;
+  bound.push(() => term.signal.set(app.state.term));
+
+  const wire = gui.addCheckbox("Wireframe", app.state.wireframe, {
+    title: DESCRIPTIONS["Wireframe"],
+    onChange: (v) => app.setWireframe(v),
+  });
+  wire.randomize = null;
+  bound.push(() => wire.signal.set(app.state.wireframe));
+
+  const debugView = gui.addSelect(
+    "View",
+    app.state.debug,
+    ["off", ...Object.keys(app.pipeline.debugViews)],
+    {
+    title: DESCRIPTIONS["View"], onChange: (name) => app.setDebug(name) },
+  );
+  debugView.randomize = null;
+  bound.push(() => debugView.signal.set(app.state.debug));
+
+  // Logarithmic, 0.1 to 1000: a view space position reads around 5 and a
+  // normalised depth needs hundreds before it bands.
+  const scaleU = app.pipeline.debugShader.uniforms.debugScale;
+  const toSlider = (v) => Math.log10(Math.max(v, 0.1)) / 4 + 0.25;
+  const fromSlider = (t) => Math.pow(10, (t - 0.25) * 4);
+
+  const debugScale = gui.addSlider("View scale", toSlider(scaleU.value), 0, 1, 0.001, {
+    title: DESCRIPTIONS["View scale"],
+    onChange: (t) => (scaleU.value = fromSlider(t)),
+  });
+  debugScale.randomize = null;
+  bound.push(() => debugScale.signal.set(toSlider(scaleU.value)));
+
+  const SCALED = new Set([2, 3, 4, 5]);
+  bound.push(() => {
+    const view = app.pipeline.debugViews[app.state.debug];
+    debugScale.setDisabled(!view || !SCALED.has(view.mode));
+  });
+
+  gui.addSeparator();
 
   const ms = (v) => `${v.toFixed(2)} ms`;
+  function addRange(label, counter, { digits = 2, unit = " ms", warn = (v) => v > 16.7 } = {}) {
+    const controller = gui.addMonitor(label, counter.summary, {
+      title: DESCRIPTIONS[label], format: () => "" });
+    const value = document.createElement("span");
+    value.className = "stat-value";
+    const range = document.createElement("span");
+    range.className = "stat-range";
+    controller.row.append(value, range);
+    controller.bind(() => {
+      const { mean, min, max } = counter.summary();
+      value.textContent = `${mean.toFixed(digits)}${unit}`;
+      value.classList.toggle("stat-warn", warn(mean));
+      range.textContent = `${min.toFixed(digits)}–${max.toFixed(digits)}`;
+    });
+    return controller;
+  }
   const count = (v) => Math.round(v).toLocaleString();
 
-  gui.addMonitor("FPS", app.stats.fps, {
-    title: DESCRIPTIONS["FPS"], format: (v) => v.toFixed(0) });
+  addRange("FPS", app.stats.fps, { digits: 0, unit: "", warn: (v) => v < 55 });
 
   // 16.7ms is the line worth crossing, so both graphs mark it.
   gui.addGraph("Frame", app.stats.frame, {
@@ -610,12 +628,9 @@ function buildPanel(app) {
     format: ms,
   });
 
-  gui.addMonitor("Field", app.stats.field, {
-    title: DESCRIPTIONS["Field"], format: ms });
-  gui.addMonitor("Polygonise", app.stats.poly, {
-    title: DESCRIPTIONS["Polygonise"], format: ms });
-  gui.addMonitor("Rest", app.stats.rest, {
-    title: DESCRIPTIONS["Rest"], format: ms });
+  addRange("Field", app.stats.field);
+  addRange("Polygonise", app.stats.poly);
+  addRange("Rest", app.stats.rest);
 
   gui.addSeparator();
 
@@ -645,16 +660,11 @@ function buildPanel(app) {
   // Volume is the only band that does not scale with the pixel count — it is
   // the grid, cubed. If everything except volume grows together, the window got
   // bigger; if one band grows alone, that pass is the one to look at.
-  gui.addMonitor("GPU volume", app.stats.gpuVolume, {
-    title: DESCRIPTIONS["GPU volume"], format: ms });
-  gui.addMonitor("GPU scene", app.stats.gpuScene, {
-    title: DESCRIPTIONS["GPU scene"], format: ms });
-  gui.addMonitor("GPU occlusion", app.stats.gpuAo, {
-    title: DESCRIPTIONS["GPU occlusion"], format: ms });
-  gui.addMonitor("GPU bloom", app.stats.gpuBloom, {
-    title: DESCRIPTIONS["GPU bloom"], format: ms });
-  gui.addMonitor("GPU grade", app.stats.gpuGrade, {
-    title: DESCRIPTIONS["GPU grade"], format: ms });
+  addRange("GPU volume", app.stats.gpuVolume);
+  addRange("GPU scene", app.stats.gpuScene);
+  addRange("GPU occlusion", app.stats.gpuAo);
+  addRange("GPU bloom", app.stats.gpuBloom);
+  addRange("GPU grade", app.stats.gpuGrade);
 
   gui.addSeparator();
 
@@ -669,7 +679,7 @@ function buildPanel(app) {
   gui.addMonitor("Programs", app.stats.programs, {
     title: DESCRIPTIONS["Programs"], format: count });
 
-  beginTab("Post");
+  gui.addTab("Post");
 
   addUniformSlider("Bloom", grade.bloomStrength, 0, 3, 0.01);
   addUniformSlider("Bloom radius", grade.bloomRadius, 0, 1, 0.01);

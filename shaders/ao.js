@@ -3,6 +3,8 @@ import { field } from "shaders/field.js";
 const fieldStored = `
 uniform sampler3D fieldTexture;
 uniform float fieldTexel;
+// The mesh's scale, so a ray in world space still lands in the field.
+uniform float fieldScale;
 
 float fieldValue(vec3 p) {
   // Half a texel in: the value for voxel v was written at v / size, but a 3D
@@ -70,8 +72,8 @@ float traceRay(vec3 worldPos, vec3 worldNormal, vec3 direction) {
 
   float stepLength = shadowDistance / float(SHADOW_STEPS);
 
-  vec3 p = (worldPos + worldNormal * shadowBias) * 0.5 + 0.5 + 0.5 * fieldTexel;
-  vec3 step = direction * stepLength * 0.5;
+  vec3 p = (worldPos + worldNormal * shadowBias) / fieldScale * 0.5 + 0.5 + 0.5 * fieldTexel;
+  vec3 step = direction * stepLength * 0.5 / fieldScale;
 
   // Closest approach over distance travelled, from one fixed ray. A sampled
   // cone was tried instead and left blotches, and crawled whenever its jitter
@@ -104,7 +106,7 @@ float traceRay(vec3 worldPos, vec3 worldNormal, vec3 direction) {
       ) / (2.0 * fieldTexel);
 
       // Field space is the unit cube, the world is that cube at -1..1.
-      float distance = 2.0 * (isolation - f) / max(length(gradient), 1e-4);
+      float distance = 2.0 * fieldScale * (isolation - f) / max(length(gradient), 1e-4);
 
       visibility = min(visibility, shadowSoftness * distance / travelled);
     }

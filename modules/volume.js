@@ -119,6 +119,8 @@ class Volume {
         uShapeThickness: { value: 0.055 },
         uShapeRounding: { value: 0 },
         uShapeHeight: { value: 0.28 },
+        uShapeWidth: { value: 0.1 },
+        uShapeAngle: { value: 252 },
         uNumBlobs: { value: 20 },
         uBlobsOn: { value: 1 },
         uBlobs: { value: new Float32Array(MAX_BLOBS * 3) },
@@ -208,6 +210,8 @@ class Volume {
       shapeThickness,
       shapeRounding = 0,
       shapeHeight = 0.28,
+      shapeWidth = 0.1,
+      shapeAngle = 252,
       isolation,
       smoothing = 0,
       twistCenter,
@@ -227,6 +231,8 @@ class Volume {
     u.uShapeThickness.value = shapeThickness;
     u.uShapeRounding.value = shapeRounding;
     u.uShapeHeight.value = shapeHeight;
+    u.uShapeWidth.value = shapeWidth;
+    u.uShapeAngle.value = shapeAngle;
     u.uIsolation.value = isolation;
     if (twistCenter) u.uTwistCenter.value.copy(twistCenter);
     if (twistAxis) u.uTwistAxis.value.copy(twistAxis);

@@ -13,6 +13,8 @@ uniform float uShapeSize;
 uniform float uShapeThickness;
 uniform float uShapeRounding;
 uniform float uShapeHeight;
+uniform float uShapeWidth;
+uniform float uShapeAngle;
 uniform vec3 uAxisTwist;
 uniform int uNumBlobs;
 uniform float uBlobsOn;

@@ -32,7 +32,6 @@ a {
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
 }
 
-.title,
 #panel .gui-title {
   font-family: "Outfit", system-ui, sans-serif;
   font-weight: 600;
@@ -42,12 +41,55 @@ a {
   --gui-font: "DM Sans", system-ui, sans-serif;
 }
 
+#help {
+  margin-bottom: 12px;
+  font-size: 12px;
+  line-height: 1.45;
+  opacity: 0.85;
+}
+
+#help p {
+  margin-bottom: 8px;
+}
+
+#help .credits {
+  opacity: 0.7;
+}
+
+#help .button {
+  display: none;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+#panel .stat-value {
+  flex: 0 0 auto;
+  margin-left: auto;
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+}
+
+#panel .stat-value.stat-warn {
+  color: #ff6b5a;
+}
+
+#panel .stat-range {
+  flex: 0 0 7.5em;
+  white-space: nowrap;
+  text-align: right;
+  font-size: 11px;
+  opacity: 0.5;
+  font-variant-numeric: tabular-nums;
+}
+
 #panel {
   position: fixed;
   top: calc(10px + env(safe-area-inset-top, 0px));
   right: 10px;
   z-index: 2;
-  width: 320px;
+  width: 380px;
   max-width: calc(100vw - 20px);
 }
 
@@ -91,40 +133,19 @@ a {
   }
 }
 
-body.ui-hidden #panel,
-body.ui-hidden #options > p,
-body.ui-hidden #switch,
-body.ui-hidden #intro {
+body.ui-hidden #panel {
   display: none;
 }
 
-#options,
-#switch,
-#intro {
+#options {
   position: absolute;
   z-index: 1;
+  left: 10px;
+  top: calc(10px + env(safe-area-inset-top, 0px));
   max-width: min(40em, calc(100vw - 20px));
 }
 
-#options {
-  left: 10px;
-  top: calc(10px + env(safe-area-inset-top, 0px));
-}
 
-#switch {
-  right: 10px;
-  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-  text-align: right;
-}
-
-#intro {
-  left: 10px;
-  bottom: calc(10px + env(safe-area-inset-bottom, 0px));
-}
-
-#intro p {
-  margin-top: 0.7em;
-}
 
 .button {
   display: inline-block;
@@ -160,19 +181,21 @@ body.ui-hidden #intro {
 }
 
 @media (max-width: 600px) {
-  #intro {
-    display: none;
-  }
-
-  #switch {
-    left: 10px;
-    right: auto;
-    text-align: left;
-  }
 
   #panel {
     width: auto;
+    max-width: none;
+    top: auto;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
     left: 10px;
     right: 10px;
+  }
+
+  #panel .gui {
+    --gui-max-height: 60vh;
+  }
+
+  #help .button {
+    display: inline-block;
   }
 }

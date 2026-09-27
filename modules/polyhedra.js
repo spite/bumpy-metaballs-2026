@@ -131,6 +131,8 @@ function solidFunction(solid) {
   );
 
   return `float sdPolyhedron${solid}(vec3 p, float r, float far) {
+  // Rounding can shrink the solid to a point, whose edges have no length.
+  if (r < 1e-4) return length(p) - r;
   float plane = ${plane} - r;
   if (plane <= 0.0 || plane >= far) return plane;
   float d = 1e18;
@@ -148,7 +150,7 @@ float polyEdge(vec3 s, vec3 n, vec3 a, vec3 b, inout bool inside) {
   vec3 ab = b - a;
   vec3 as = s - a;
   if (dot(cross(ab, as), n) < 0.0) inside = false;
-  vec3 c = as - ab * clamp(dot(as, ab) / dot(ab, ab), 0.0, 1.0);
+  vec3 c = as - ab * clamp(dot(as, ab) / max(dot(ab, ab), 1e-12), 0.0, 1.0);
   return dot(c, c);
 }
 

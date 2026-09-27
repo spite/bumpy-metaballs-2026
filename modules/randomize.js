@@ -27,6 +27,8 @@ function randomizeScene(app) {
     thickness: app.setShapeThickness,
     height: app.setShapeHeight,
     rounding: app.setShapeRounding,
+    width: app.setShapeWidth,
+    angle: app.setShapeAngle,
   };
   for (const [control, [min, max]] of Object.entries(shapeRanges(shape))) {
     setters[control](between(min, max));

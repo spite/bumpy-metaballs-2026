@@ -1,5 +1,5 @@
 import { surfaceOffset } from "modules/volume.js";
-import { presets } from "modules/presets.js";
+import { presets, findPreset } from "modules/presets.js";
 
 // Every tweakable value in one table. Order matters on the way in: the
 // material resets everything else, and transmission decides which material
@@ -51,8 +51,7 @@ function buildSchema(app) {
         // Case insensitive, and a miss is dropped rather than applied: a link that
         // missed would otherwise layer the rest of itself over whichever preset
         // happened to be up.
-        const wanted = name.toLowerCase();
-        const i = presets.findIndex((p) => p.name.toLowerCase() === wanted);
+        const i = findPreset(name);
         if (i >= 0) app.applyPreset(i);
       },
       parse: String,
@@ -83,6 +82,8 @@ function buildSchema(app) {
     sthick: num(() => app.state.shapeThickness, app.setShapeThickness),
     sround: num(() => app.state.shapeRounding, app.setShapeRounding),
     sheight: num(() => app.state.shapeHeight, app.setShapeHeight),
+    swidth: num(() => app.state.shapeWidth, app.setShapeWidth),
+    sangle: num(() => app.state.shapeAngle, app.setShapeAngle),
     twx: num(() => app.state.axisTwist[0], (v) => app.setAxisTwist(0, v)),
     twy: num(() => app.state.axisTwist[1], (v) => app.setAxisTwist(1, v)),
     twz: num(() => app.state.axisTwist[2], (v) => app.setAxisTwist(2, v)),
@@ -241,6 +242,8 @@ const GEOMETRY_FIELDS = new Set([
   "sthick",
   "sround",
   "sheight",
+  "swidth",
+  "sangle",
   "twx",
   "twy",
   "twz",
@@ -274,6 +277,10 @@ function readUrl(app) {
 
   if (saved && !params.has("sround")) app.setShapeRounding(legacyRounding(app.state));
   if (saved && !params.has("sheight")) legacyDimensions(app);
+  if (saved && !params.has("swidth")) {
+    const { numBlobs, isolation, shapeSize } = app.state;
+    app.setShapeWidth(0.4 * (shapeSize + surfaceOffset(numBlobs, isolation)));
+  }
   return true;
 }
 
@@ -323,7 +330,6 @@ function auditPresets(app) {
   const expected = Object.keys(schema(app)).filter(
     (key) => key !== "mat" && !GEOMETRY_FIELDS.has(key),
   );
-  const names = new Set(presets.map((preset) => preset.name.toLowerCase()));
   const problems = [];
 
   for (const preset of presets) {
@@ -343,7 +349,7 @@ function auditPresets(app) {
     // A link preset is a valid name here: a url copied from the address bar
     // names whichever preset was selected.
     const base = fields.get("mat");
-    if (base !== null && !names.has(base.toLowerCase())) {
+    if (base !== null && findPreset(base) < 0) {
       problems.push(`${preset.name} names mat=${base}, which is not a preset`);
     }
   }
