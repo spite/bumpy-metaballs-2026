@@ -20,6 +20,7 @@ import { blobPositions, MAX_BLOBS } from "modules/blobMotion.js";
 // straight into its own layer with framebufferTextureLayer; copying a 2D
 // atlas in instead cost 0.9ms per slice against 0.28ms of real work.
 const vertexShader = `precision highp float;
+precision highp sampler2D;
 in vec3 position;
 void main() {
   gl_Position = vec4(position.xy * 2.0, 0.0, 1.0);
@@ -27,6 +28,7 @@ void main() {
 `;
 
 const fragmentShader = `precision highp float;
+precision highp sampler2D;
 precision highp sampler3D;
 
 uniform float uSize;
@@ -61,6 +63,7 @@ void main() {
 // neighbour is skipped without advancing the divisor, which makes the edges
 // of the grid blur less than the middle.
 const blurFragmentShader = `precision highp float;
+precision highp sampler2D;
 precision highp sampler3D;
 
 uniform sampler3D uField;

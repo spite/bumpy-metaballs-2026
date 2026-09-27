@@ -3,6 +3,7 @@
 // an interpolated colour bleeds one surface's shading across the silhouette
 // onto another.
 const shader = `precision highp float;
+precision highp sampler2D;
 
 uniform sampler2D colorMap;
 uniform sampler2D diffuseMap;

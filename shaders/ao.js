@@ -14,6 +14,7 @@ float fieldValue(vec3 p) {
 `;
 
 const shader = `precision highp float;
+precision highp sampler2D;
 precision highp sampler3D;
 
 uniform sampler2D positionMap;

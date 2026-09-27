@@ -7,6 +7,7 @@ import {
 } from "shaders/common.js";
 
 const shader = `precision highp float;
+precision highp sampler2D;
 
 uniform sampler2D normalMap;
 uniform float normalScale;

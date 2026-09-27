@@ -133,7 +133,9 @@ function buildPanel(app) {
     storageKey: "bumpy-metaballs",
   });
 
-  gui.rows.prepend(document.getElementById("help"));
+  const help = document.getElementById("help");
+  gui.rows.prepend(help);
+  help.hidden = false;
 
   // Overrides the remembered open state, which would otherwise win.
   if (matchMedia("(max-width: 600px)").matches) gui.rowsExpanded.set(false);

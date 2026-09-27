@@ -10,6 +10,7 @@ float sampleField(vec3 voxel) {
 `;
 
 const shader = `precision highp float;
+precision highp sampler2D;
 precision highp int;
 precision highp sampler3D;
 precision highp isampler2D;

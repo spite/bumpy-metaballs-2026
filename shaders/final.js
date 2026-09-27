@@ -1,6 +1,7 @@
 import { chromaticAberration } from "shaders/aberration.js";
 
 const shader = `precision highp float;
+precision highp sampler2D;
 
 uniform sampler2D sceneMap;
 uniform sampler2D bloom0;

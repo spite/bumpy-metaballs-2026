@@ -1,4 +1,5 @@
 const shader = `precision highp float;
+precision highp sampler2D;
 
 uniform mat4 modelMatrix;
 uniform mat4 modelViewMatrix;

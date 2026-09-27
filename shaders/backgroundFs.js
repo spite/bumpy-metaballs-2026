@@ -1,6 +1,7 @@
 import { mrtOutputs, sRGBToLinear } from "shaders/common.js";
 
 const shader = `precision highp float;
+precision highp sampler2D;
 
 uniform vec3 cameraPosition;
 uniform vec3 sky;

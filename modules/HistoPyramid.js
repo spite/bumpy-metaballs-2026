@@ -19,6 +19,7 @@ import {
 const MAX_LEVELS = 11;
 
 const vertexShader = `precision highp float;
+precision highp sampler2D;
 in vec3 position;
 void main() {
   gl_Position = vec4(position.xy * 2.0, 0.0, 1.0);
@@ -26,6 +27,7 @@ void main() {
 `;
 
 const baseFragmentShader = `precision highp float;
+precision highp sampler2D;
 precision highp int;
 precision highp sampler3D;
 precision highp isampler2D;
@@ -72,6 +74,7 @@ void main() {
 `;
 
 const reduceFragmentShader = `precision highp float;
+precision highp sampler2D;
 
 uniform sampler2D uSource;
 uniform bool uFromBase;
