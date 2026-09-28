@@ -51,6 +51,9 @@ The address bar always holds the whole look, so copying the URL shares exactly
 what is on screen. Picking a preset changes the material and leaves the shape
 settings alone.
 
+`?size=1080` renders a fixed 1080×1080 canvas whatever the window, for
+screenshots and recordings, and `window.app` exposes the sketch to the console.
+
 ## How it works
 
 **The field.** Each frame the scalar field is evaluated into a 3D float texture,

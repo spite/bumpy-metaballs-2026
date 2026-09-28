@@ -29,7 +29,7 @@ import { Pipeline } from "modules/Pipeline.js";
 import { BLUE_NOISE_SIZE, blueNoiseTexture } from "modules/blueNoiseTexture.js";
 import { shapeNames, shapeIndex, fitShape } from "modules/sdf.js";
 import { loadMeshField, smoothMeshField } from "modules/meshField.js";
-import { trackLoad } from "modules/loading.js";
+import { trackLoad, idle } from "modules/loading.js";
 import { pickLook, randomizeLook } from "modules/randomize.js";
 import { trackPointer } from "modules/pointer.js";
 import { environments, normalMaps, presets, findPreset } from "modules/presets.js";
@@ -90,6 +90,10 @@ let dirty = true;
 let twisted = false;
 
 const container = document.querySelector("#container");
+
+// ?size=N renders an N×N canvas at dpr 1 whatever the window, for screenshots
+// and recordings.
+const fixedSize = Number(new URLSearchParams(location.search).get("size")) || 0;
 
 // preserveDrawingBuffer is what makes a right-click save or toDataURL give
 // the frame rather than a blank, and it can only be asked for at context
@@ -622,6 +626,20 @@ function setShapeWidth(value) {
   dirty = true;
 }
 
+// Nine numbers, column major: a rotation of the whole field about its centre.
+function setSpin(elements) {
+  volume.material.uniforms.uSpin.value.fromArray(elements);
+  dirty = true;
+}
+
+async function preloadAll() {
+  ensureModelField();
+  for (const map of normalMaps) loadTexture(map.url, RepeatWrapping);
+  await Promise.all(environments.map((env) => loadEnvironment(env.url, env.name)));
+  await modelPending;
+  await idle();
+}
+
 function setShapeAngle(value) {
   state.shapeAngle = value;
   dirty = true;
@@ -722,6 +740,16 @@ const app = {
   envUniforms,
   coreFieldResolution,
   modelLoaded: () => modelField !== null,
+  presets,
+  preload: preloadAll,
+  setSpin,
+  bounce: () => (bounceStart = performance.now()),
+  nextLook: (preset) => {
+    randomizeLook(app, preset);
+    panel?.sync();
+    bounceStart = performance.now();
+  },
+  canvas: renderer.domElement,
   stats,
   outerMaterial,
   coreMaterial,
@@ -799,9 +827,9 @@ container.addEventListener("dblclick", toggleFullscreen);
 // Resize
 
 function resize() {
-  const width = window.innerWidth;
-  const height = window.innerHeight;
-  const dpr = Math.min(window.devicePixelRatio, 2);
+  const width = fixedSize || window.innerWidth;
+  const height = fixedSize || window.innerHeight;
+  const dpr = fixedSize ? 1 : Math.min(window.devicePixelRatio, 2);
 
   renderer.setPixelRatio(dpr);
   renderer.setSize(width, height);
@@ -985,3 +1013,6 @@ function render() {
 }
 
 render();
+
+// For driving the sketch from outside: the console, or a recorder.
+window.app = app;

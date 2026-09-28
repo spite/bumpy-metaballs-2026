@@ -16,6 +16,7 @@ uniform float uShapeHeight;
 uniform float uShapeWidth;
 uniform float uShapeAngle;
 uniform vec3 uAxisTwist;
+uniform mat3 uSpin;
 uniform int uNumBlobs;
 uniform float uBlobsOn;
 uniform vec3 uBlobs[${MAX_BLOBS}];
@@ -68,7 +69,7 @@ vec3 twistAxes(vec3 p) {
 // at the end: that is what gives a ball a finite extent instead of a tail
 // across the whole grid.
 float fieldAt(vec3 p) {
-  p = twistPoint(twistAxes(p));
+  p = twistPoint(twistAxes(uSpin * (p - 0.5) + 0.5));
 
   float strength = 1.2 / ((sqrt(float(uNumBlobs)) - 1.0) / 4.0 + 1.0);
   float value = 0.0;
