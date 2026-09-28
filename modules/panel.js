@@ -1,6 +1,6 @@
 import { GUI, random } from "guspira";
 import { environments, normalMaps, presets } from "modules/presets.js";
-import { shapeNames, shapeUses, shapeMaxSize } from "modules/sdf.js";
+import { shapeNames, shapeUses, shapeDefaults, shapeMaxSize } from "modules/sdf.js";
 import { surfaceOffset } from "modules/volume.js";
 import { motionNames } from "modules/blobMotion.js";
 
@@ -298,7 +298,18 @@ function buildPanel(app) {
 
   const shape = gui.addSelect("Shape", app.state.shape, ["none", ...shapeNames], {
     title: DESCRIPTIONS["Shape"],
-    onChange: (v) => app.setShape(v),
+    onChange: (v) => {
+      const setters = {
+        size: app.setShapeSize,
+        thickness: app.setShapeThickness,
+        height: app.setShapeHeight,
+        rounding: app.setShapeRounding,
+        width: app.setShapeWidth,
+        angle: app.setShapeAngle,
+      };
+      for (const [control, value] of Object.entries(shapeDefaults(v))) setters[control](value);
+      app.setShape(v);
+    },
   });
   bound.push(() => shape.signal.set(app.state.shape));
 

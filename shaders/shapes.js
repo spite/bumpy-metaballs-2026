@@ -335,7 +335,7 @@ float sdModel(vec3 p, float size, float offset) {
   // every feature away.
   float fullSize = size + offset;
   float k = 1.0 / max(fullSize, 1e-4);
-  vec3 q = p * k;
+  vec3 q = p.yxz * k;
 
   // Must agree with the sampled value at the wall, or the mesher finds a
   // surface there.
