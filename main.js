@@ -29,8 +29,8 @@ import { Pipeline } from "modules/Pipeline.js";
 import { BLUE_NOISE_SIZE, blueNoiseTexture } from "modules/blueNoiseTexture.js";
 import { shapeNames, shapeIndex, fitShape } from "modules/sdf.js";
 import { loadMeshField, smoothMeshField } from "modules/meshField.js";
-import { trackLoad, idle } from "modules/loading.js";
-import { randomizeLook } from "modules/randomize.js";
+import { trackLoad } from "modules/loading.js";
+import { pickLook, randomizeLook } from "modules/randomize.js";
 import { trackPointer } from "modules/pointer.js";
 import { environments, normalMaps, presets, findPreset } from "modules/presets.js";
 import { buildPanel } from "modules/panel.js";
@@ -194,6 +194,7 @@ async function buildEnvironment(url) {
 
 const loader = new TextureLoader();
 const textureCache = new Map();
+const textureLoads = new Map();
 
 function loadTexture(url, wrapping) {
   let texture = textureCache.get(url);
@@ -204,6 +205,7 @@ function loadTexture(url, wrapping) {
     texture = loader.load(url, settle, undefined, settle);
     trackLoad(`Loading ${url.split("/").pop()}`, loaded);
     textureCache.set(url, texture);
+    textureLoads.set(url, loaded);
   }
 
   // Set every time, not just on the miss: wrapping belongs to the use, not the
@@ -353,6 +355,26 @@ function linkBase(preset) {
   fields.delete("mat");
   for (const [key, value] of fields) merged.set(key, value);
   return merged.toString();
+}
+
+// Resolves once everything the preset shows is loaded, so a switch can wait
+// rather than show the new look first and pop its textures in after.
+function presetAssets(index) {
+  const preset = presets[(index + presets.length) % presets.length];
+  const fields = new URLSearchParams(preset.url ? linkBase(preset) : pristine);
+  const base = preset.url ? presets[findPreset(fields.get("mat") ?? "")] : preset;
+  const mapUrl = (name, fallback) =>
+    normalMaps.find((m) => m.name === name)?.url ?? fallback;
+
+  const outer = mapUrl(fields.get("onmap"), base?.normalMap);
+  const inner = mapUrl(fields.get("inmap"), base?.transmission?.inside?.normalMap ?? base?.normalMap);
+  const env = environments.find((e) => e.name === fields.get("env")) ?? environments[0];
+
+  const maps = [outer, inner].filter(Boolean).map((url) => {
+    loadTexture(url, RepeatWrapping);
+    return textureLoads.get(url);
+  });
+  return Promise.all([loadEnvironment(env.url, env.name), ...maps]);
 }
 
 let applyingPreset = false;
@@ -736,10 +758,16 @@ function bounceScale(now) {
   return 1 - 0.35 * Math.exp(-2.8 * t) * Math.cos(2 * Math.PI * 2.6 * t);
 }
 
-bindKey("KeyR", () => {
-  randomizeLook(app);
+let lookRequest = 0;
+
+bindKey("KeyR", async () => {
+  const request = ++lookRequest;
+  const next = pickLook(app);
+  await presetAssets(next);
+  if (request !== lookRequest) return;
+  randomizeLook(app, next);
   panel?.sync();
-  idle().then(() => (bounceStart = performance.now()));
+  bounceStart = performance.now();
 });
 bindKey("KeyF", toggleFullscreen);
 bindKey("ArrowRight", () => applyPreset(state.preset + 1));

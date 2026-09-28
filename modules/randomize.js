@@ -35,11 +35,15 @@ function randomizeScene(app) {
   }
 }
 
-// A different material and a new scene of shapes.
-function randomizeLook(app) {
+function pickLook(app) {
   const others = presets.map((_, i) => i).filter((i) => i !== app.state.preset);
-  app.applyPreset(pick(others));
+  return pick(others);
+}
+
+// A different material and a new scene of shapes.
+function randomizeLook(app, preset = pickLook(app)) {
+  app.applyPreset(preset);
   randomizeScene(app);
 }
 
-export { randomizeLook };
+export { pickLook, randomizeLook };
