@@ -258,7 +258,10 @@ function buildPanel(app) {
       material.setOptions(changed ? [CUSTOM, ...names] : names);
     }
     material.signal.set(changed ? CUSTOM : name);
-    presetName.textContent = changed ? "" : name;
+    // Written only on a change: it runs four times a second, and any text write
+    // makes the browser restyle and lay out the panel's title again.
+    const text = changed ? "" : name;
+    if (presetName.textContent !== text) presetName.textContent = text;
   };
   bound.push(() => material.signal.set(modified ? CUSTOM : presets[app.state.preset].name));
 
