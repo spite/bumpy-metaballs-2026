@@ -16,9 +16,11 @@ follow the original 2013 motion; the shapes run from spheres and boxes to knots,
 a gyroid, a Goursat tangle and Suzanne. Glass presets draw a second, inner
 surface — a core — seen through a refracting, absorbing shell.
 
-It is a from-scratch rewrite of _Bumpy Metaballs_ on three.js and WebGL2. The
-2013 version polygonised on the CPU and shaded with a matcap; this one does the
-whole field on the GPU and lights it from an environment map.
+It is a from-scratch rewrite of
+[_Bumpy Metaballs_](https://github.com/spite/bumpy-metaballs)
+([demo](https://clicktorelease.com/code/bumpy-metaballs)) on three.js and
+WebGL2. The 2013 version polygonised on the CPU and shaded with a matcap; this
+one does the whole field on the GPU and lights it from an environment map.
 
 ## How to use it
 
@@ -32,7 +34,8 @@ Drag to rotate, scroll to zoom. The keyboard does the rest:
 | F, double-click, double-tap | fullscreen                |
 | Tab                         | hide the interface        |
 
-The panel holds everything else:
+The panel, built with [guspira](https://github.com/spite/guspira), holds
+everything else:
 
 - **Scene**: resolution, blobs and their motion, the shape and its
   size, thickness, height, width, angle and rounding (only the ones that shape
@@ -53,6 +56,8 @@ settings alone.
 
 `?size=1080` renders a fixed 1080×1080 canvas whatever the window, for
 screenshots and recordings, and `window.app` exposes the sketch to the console.
+The videos of it are recorded with
+[CCapture.js](https://github.com/spite/ccapture.js).
 
 ## How it works
 
