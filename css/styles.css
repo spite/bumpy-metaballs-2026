@@ -36,6 +36,26 @@ a {
   --gui-font: "DM Sans", system-ui, sans-serif;
 }
 
+#panel .gui-title {
+  font-size: 14px;
+}
+
+#panel .gui-title-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#panel .gui-title-preset {
+  font-weight: 400;
+  color: #ffa683;
+}
+
+#panel .gui-title-preset:not(:empty)::before {
+  content: " · ";
+}
+
 #help {
   margin-bottom: 12px;
   font-size: 12px;

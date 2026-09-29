@@ -384,6 +384,32 @@ function presetAssets(index) {
 
 let applyingPreset = false;
 
+// The look as the preset left it, to tell when it has been edited since.
+// Geometry is left out because presets never set it, and the debug views
+// because they change how the look is shown, not the look.
+const VIEW_FIELDS = new Set(["mat", "dbg", "dbgs", "term", "wire"]);
+let presetLook = null;
+let presetCheckDue = 0;
+
+function lookFields() {
+  const fields = new URLSearchParams(serialize(app));
+  for (const key of [...fields.keys()]) {
+    if (GEOMETRY_FIELDS.has(key) || VIEW_FIELDS.has(key)) fields.delete(key);
+  }
+  return fields.toString();
+}
+
+function presetApplied() {
+  presetLook = lookFields();
+  presetCheckDue = 0;
+}
+
+function checkPreset(now) {
+  if (!panel || now < presetCheckDue) return;
+  presetCheckDue = now + 250;
+  panel.showPreset(presets[state.preset].name, lookFields() !== presetLook);
+}
+
 function applyPreset(index) {
   const wanted = (index + presets.length) % presets.length;
   state.preset = wanted;
@@ -399,6 +425,7 @@ function applyPreset(index) {
       applyingPreset = false;
     }
     state.preset = wanted;
+    presetApplied();
     if (panel) panel.sync();
     return;
   }
@@ -456,6 +483,7 @@ function applyPreset(index) {
 
   setTransmission(glass);
 
+  presetApplied();
   if (panel) panel.sync();
 }
 
@@ -1042,6 +1070,7 @@ function render() {
 
   controls.update();
   writeUrl(now);
+  checkPreset(now);
 
   pipeline.render(renderer, scene, camera);
 

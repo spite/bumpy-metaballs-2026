@@ -11,6 +11,8 @@ function usedBy(control) {
 
 // Hover text for each control. guspira puts its randomise hint in this same
 // title slot, so the hint is appended at the end of the build instead.
+const CUSTOM = "Custom";
+
 const DESCRIPTIONS = {
   // Material
   "Material": "The preset the whole panel starts from. Everything below can then be changed freely.",
@@ -133,6 +135,14 @@ function buildPanel(app) {
     storageKey: "bumpy-metaballs",
   });
 
+  // The title's text node, wrapped so the preset name can sit beside it.
+  const titleText = document.createElement("span");
+  titleText.className = "gui-title-text";
+  const presetName = document.createElement("span");
+  presetName.className = "gui-title-preset";
+  titleText.append(gui.titleEl.firstChild, presetName);
+  gui.titleEl.prepend(titleText);
+
   const help = document.getElementById("help");
   gui.rows.prepend(help);
   help.hidden = false;
@@ -230,18 +240,27 @@ function buildPanel(app) {
 
   // The roll never switches material or mode: either would pull every other
   // control back to a preset's defaults.
-  const material = gui.addSelect(
-    "Material",
-    presets[app.state.preset].name,
-    presets.map((p) => p.name),
-    {
+  const names = presets.map((p) => p.name);
+  const material = gui.addSelect("Material", presets[app.state.preset].name, names, {
     title: DESCRIPTIONS["Material"],
-      onChange: (name) =>
-        app.applyPreset(presets.findIndex((p) => p.name === name)),
+    onChange: (name) => {
+      if (name !== CUSTOM) app.applyPreset(names.indexOf(name));
     },
-  );
+  });
   material.randomize = null;
-  bound.push(() => material.signal.set(presets[app.state.preset].name));
+
+  // Custom is offered only while the look has moved away from its preset, so
+  // it can't be picked as if it were one.
+  let modified = false;
+  const showPreset = (name, changed) => {
+    if (changed !== modified) {
+      modified = changed;
+      material.setOptions(changed ? [CUSTOM, ...names] : names);
+    }
+    material.signal.set(changed ? CUSTOM : name);
+    presetName.textContent = changed ? "" : name;
+  };
+  bound.push(() => material.signal.set(modified ? CUSTOM : presets[app.state.preset].name));
 
   gui.addTab("Scene");
 
@@ -747,6 +766,7 @@ function buildPanel(app) {
   return {
     gui,
     sync: () => bound.forEach((update) => update()),
+    showPreset,
   };
 }
 
