@@ -81,10 +81,49 @@
     <div id="container"></div>
     <div id="panel"></div>
 
+    <div id="buttons" hidden>
+      <button id="pause" class="icon-button" type="button" title="Pause (Space)" aria-label="Pause" aria-pressed="false">
+        <svg class="when-off" viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+          <rect x="6" y="4" width="4" height="16" rx="1" />
+          <rect x="14" y="4" width="4" height="16" rx="1" />
+        </svg>
+        <svg class="when-on" viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+          <path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z" />
+        </svg>
+      </button>
+      <button id="randomize" class="icon-button" type="button" title="Randomize (R)" aria-label="Randomize">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M16 3h5v5" />
+          <path d="M4 20 21 3" />
+          <path d="M21 16v5h-5" />
+          <path d="M15 15l6 6" />
+          <path d="M4 4l5 5" />
+        </svg>
+      </button>
+      <button id="fullscreen" class="icon-button" type="button" title="Fullscreen (F)" aria-label="Fullscreen" aria-pressed="false">
+        <svg class="when-off" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+        </svg>
+        <svg class="when-on" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3" />
+        </svg>
+      </button>
+      <button id="ui-toggle" class="icon-button" type="button" title="Hide the interface (Tab)" aria-label="Hide the interface" aria-pressed="false">
+        <svg class="when-off" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+        <svg class="when-on" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+          <path d="M1 1l22 22" />
+        </svg>
+      </button>
+    </div>
+
     <div id="help" hidden>
       <p>
-        Drag to rotate, scroll to zoom, space to pause, R to randomize, F or
-        double-click for fullscreen, Tab to hide the interface.
+        Drag to rotate, scroll to zoom, space to pause, R to randomize, F,
+        double-click or double-tap for fullscreen, Tab to hide the interface.
       </p>
       <p>
         The Scene tab has more shapes to add to the blobs, and with its Twist
@@ -110,7 +149,6 @@
           >GitHub</a
         >.
       </p>
-      <a class="button" href="#" id="fullscreenBtn">Go fullscreen</a>
     </div>
 
     <div id="options">

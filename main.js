@@ -90,6 +90,7 @@ let dirty = true;
 let twisted = false;
 
 const container = document.querySelector("#container");
+const pauseButton = document.querySelector("#pause");
 
 // ?size=N renders an N×N canvas at dpr 1 whatever the window, for screenshots
 // and recordings.
@@ -668,6 +669,9 @@ function setFarWall(value) {
 
 function setPaused(value) {
   state.paused = value;
+  pauseButton.setAttribute("aria-pressed", String(value));
+  pauseButton.setAttribute("aria-label", value ? "Play" : "Pause");
+  pauseButton.title = value ? "Play (Space)" : "Pause (Space)";
 }
 
 function setResolution(value) {
@@ -788,7 +792,7 @@ function bounceScale(now) {
 
 let lookRequest = 0;
 
-bindKey("KeyR", async () => {
+async function randomizeWhenReady() {
   const request = ++lookRequest;
   const next = pickLook(app);
   await presetAssets(next);
@@ -796,33 +800,92 @@ bindKey("KeyR", async () => {
   randomizeLook(app, next);
   panel?.sync();
   bounceStart = performance.now();
+}
+
+bindKey("KeyR", randomizeWhenReady);
+
+const randomizeButton = document.querySelector("#randomize");
+randomizeButton.addEventListener("click", () => {
+  randomizeButton.classList.toggle("turned");
+  randomizeWhenReady();
 });
+pauseButton.addEventListener("click", () => setPaused(!state.paused));
+document.querySelector("#buttons").hidden = false;
 bindKey("KeyF", toggleFullscreen);
 bindKey("ArrowRight", () => applyPreset(state.preset + 1));
 bindKey("ArrowLeft", () => applyPreset(state.preset - 1));
+const uiToggle = document.querySelector("#ui-toggle");
+
+function setUiHidden(hidden) {
+  document.body.classList.toggle("ui-hidden", hidden);
+  uiToggle.setAttribute("aria-pressed", String(hidden));
+  const label = hidden ? "Show the interface" : "Hide the interface";
+  uiToggle.setAttribute("aria-label", label);
+  uiToggle.title = `${label} (Tab)`;
+}
+
+uiToggle.addEventListener("click", () => setUiHidden(!document.body.classList.contains("ui-hidden")));
+
 bindKey("Tab", (event) => {
-  // Inside the panel Tab still moves focus between its controls.
-  if (event.target.closest?.("#panel")) return;
+  // Inside the panel and the buttons Tab still moves focus between controls.
+  if (event.target.closest?.("#panel, #buttons")) return;
   event.preventDefault();
-  document.body.classList.toggle("ui-hidden");
+  setUiHidden(!document.body.classList.contains("ui-hidden"));
 });
 
 // Fullscreen
 
+// The whole page, not the canvas: the buttons and panel have to stay reachable,
+// or nothing on screen could leave fullscreen again.
 function toggleFullscreen() {
   if (document.fullscreenElement) {
     document.exitFullscreen();
   } else {
-    container.requestFullscreen().catch(() => {});
+    document.documentElement.requestFullscreen().catch(() => {});
   }
 }
 
-document.querySelector("#fullscreenBtn").addEventListener("click", (e) => {
-  e.preventDefault();
-  toggleFullscreen();
+const fullscreenButton = document.querySelector("#fullscreen");
+fullscreenButton.hidden = !document.fullscreenEnabled;
+fullscreenButton.addEventListener("click", toggleFullscreen);
+document.addEventListener("fullscreenchange", () => {
+  const on = document.fullscreenElement !== null;
+  fullscreenButton.setAttribute("aria-pressed", String(on));
+  fullscreenButton.setAttribute("aria-label", on ? "Exit fullscreen" : "Fullscreen");
 });
 
-container.addEventListener("dblclick", toggleFullscreen);
+// Touch gets its own double tap: dblclick is unreliable on phones, and where a
+// browser does fire it too, the two would enter and leave fullscreen at once.
+let lastPointer = "mouse";
+let tapStart = null;
+let lastTap = null;
+
+container.addEventListener("pointerdown", (e) => {
+  lastPointer = e.pointerType;
+  tapStart = e.pointerType === "touch" && e.isPrimary ? { x: e.clientX, y: e.clientY, t: e.timeStamp } : null;
+});
+
+container.addEventListener("pointerup", (e) => {
+  if (!tapStart || e.pointerType !== "touch" || !e.isPrimary) return;
+  const isTap = e.timeStamp - tapStart.t < 250 && Math.hypot(e.clientX - tapStart.x, e.clientY - tapStart.y) < 10;
+  tapStart = null;
+  if (!isTap) {
+    lastTap = null;
+    return;
+  }
+  const isDouble =
+    lastTap && e.timeStamp - lastTap.t < 300 && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 40;
+  if (isDouble) {
+    lastTap = null;
+    toggleFullscreen();
+  } else {
+    lastTap = { x: e.clientX, y: e.clientY, t: e.timeStamp };
+  }
+});
+
+container.addEventListener("dblclick", () => {
+  if (lastPointer !== "touch") toggleFullscreen();
+});
 
 // Resize
 

@@ -24,13 +24,13 @@ whole field on the GPU and lights it from an environment map.
 
 Drag to rotate, scroll to zoom. The keyboard does the rest:
 
-| key             |                           |
-| --------------- | ------------------------- |
-| Space           | pause                     |
-| R               | random material and scene |
-| ← →             | previous and next preset  |
-| F, double-click | fullscreen                |
-| Tab             | hide the interface        |
+| key                         |                           |
+| --------------------------- | ------------------------- |
+| Space                       | pause                     |
+| R                           | random material and scene |
+| ← →                         | previous and next preset  |
+| F, double-click, double-tap | fullscreen                |
+| Tab                         | hide the interface        |
 
 The panel holds everything else:
 
