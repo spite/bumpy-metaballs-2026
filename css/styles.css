@@ -32,11 +32,6 @@ a {
   text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
 }
 
-#panel .gui-title {
-  font-family: "Outfit", system-ui, sans-serif;
-  font-weight: 600;
-}
-
 #panel .gui {
   --gui-font: "DM Sans", system-ui, sans-serif;
 }
