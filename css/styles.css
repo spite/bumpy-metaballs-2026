@@ -260,7 +260,21 @@ body.ui-hidden #ui-toggle:focus-visible {
   }
 
   #buttons {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
+
+  body.ui-hidden #buttons {
+    left: auto;
     right: 10px;
+    transform: none;
+  }
+
+  #options {
+    left: 50%;
+    top: calc(10px + env(safe-area-inset-top, 0px) + 65px);
+    transform: translateX(-50%);
   }
 
 }
