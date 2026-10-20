@@ -1,4 +1,4 @@
-/*! guspira v0.1.1 — A reactive GUI toolkit for creative coding sketches
+/*! guspira v0.2.0 — A reactive GUI toolkit for creative coding sketches
  * https://github.com/spite/guspira
  * MIT License, Copyright (c) 2026 Jaume Sanchez
  */
@@ -13,6 +13,9 @@ var batchDepth = 0;
 var pending = /* @__PURE__ */ new Set();
 var queue = [];
 var queueIndex = 0;
+var marked = [];
+var passId = 0;
+var MAX_RUNS_PER_PASS = 1e5;
 var ReactiveEffect = class {
   constructor(fn, scheduler) {
     this.fn = fn;
@@ -23,6 +26,11 @@ var ReactiveEffect = class {
     this.dirty = false;
     this.cleanupFn = null;
     this.children = null;
+    this.downstream = null;
+    this.stale = false;
+    this.unschedule = null;
+    this.pass = 0;
+    this.passRuns = 0;
     if (activeEffect) (activeEffect.children ??= []).push(this);
   }
   // What a dependency change does to this effect: run it, or hand it to its scheduler to be
@@ -36,8 +44,15 @@ var ReactiveEffect = class {
     if (this.scheduler) this.scheduler(this);
     else this.run();
   }
+  // A run already waiting in a queue is taken out and remembered as a change to catch up on.
   pause() {
     this.paused = true;
+    if (this.unschedule && this.unschedule(this)) this.dirty = true;
+  }
+  // What a queue calls when the effect's turn comes.
+  runQueued() {
+    if (this.paused) this.dirty = true;
+    else this.run();
   }
   // Catches up immediately rather than through the scheduler: resuming is itself the moment
   // the caller chose, so waiting for another frame after it would just add latency.
@@ -62,6 +77,7 @@ var ReactiveEffect = class {
       return result;
     } finally {
       activeEffect = prev;
+      if (!this.active) this.dispose();
     }
   }
   runCleanup() {
@@ -82,36 +98,45 @@ var ReactiveEffect = class {
     this.children = null;
     children.forEach((child) => child.stop());
   }
-  stop() {
-    if (!this.active) return;
+  dispose() {
     this.stopChildren();
     this.runCleanup();
     this.cleanup();
+  }
+  stop() {
+    if (!this.active) return;
     this.active = false;
+    if (this.unschedule) this.unschedule(this);
+    this.dispose();
   }
 };
 function track(subscribers) {
-  if (activeEffect) {
+  if (activeEffect && activeEffect.active) {
     subscribers.add(activeEffect);
     activeEffect.deps.add(subscribers);
   }
 }
-function reportError(error) {
-  if (typeof console !== "undefined") console.error("[guspira] effect threw:", error);
+function reportError(error, what = "effect threw") {
+  if (typeof console !== "undefined") console.error(`[guspira] ${what}:`, error);
 }
 function drain() {
   batchDepth++;
+  passId++;
   try {
-    let guard = 0;
     while (queueIndex < queue.length) {
-      if (++guard > 1e5) {
+      const effect2 = queue[queueIndex++];
+      pending.delete(effect2);
+      if (effect2.downstream && !effect2.stale) continue;
+      if (effect2.pass !== passId) {
+        effect2.pass = passId;
+        effect2.passRuns = 0;
+      }
+      if (++effect2.passRuns > MAX_RUNS_PER_PASS) {
         reset();
         throw new Error(
           "[guspira] reactive update never settled — an effect is very likely writing a signal it also reads. Use peek() to read without subscribing, or untrack()."
         );
       }
-      const effect2 = queue[queueIndex++];
-      pending.delete(effect2);
       try {
         effect2.notify();
       } catch (error) {
@@ -127,12 +152,27 @@ function reset() {
   pending.clear();
   queue.length = 0;
   queueIndex = 0;
+  for (const computation of marked) computation.stale = false;
+  marked.length = 0;
+}
+function markStale(computation) {
+  const stack = [computation];
+  while (stack.length) {
+    const next = stack.pop();
+    if (next.stale) continue;
+    next.stale = true;
+    marked.push(next);
+    next.downstream.forEach((reader) => {
+      if (reader.downstream && !reader.stale) stack.push(reader);
+    });
+  }
 }
 function trigger(subscribers) {
   if (subscribers.size === 0) return;
   batchDepth++;
   try {
     subscribers.forEach((effect2) => {
+      if (effect2.downstream) markStale(effect2);
       if (pending.has(effect2)) return;
       pending.add(effect2);
       queue.push(effect2);
@@ -149,7 +189,7 @@ function same(a, b) {
   }
   return false;
 }
-function signal(initialValue) {
+function createSignal(initialValue) {
   let value = initialValue;
   const subscribers = /* @__PURE__ */ new Set();
   const sig = () => {
@@ -165,14 +205,35 @@ function signal(initialValue) {
   sig.peek = () => value;
   sig.isSignal = true;
   sig.target = sig;
-  return sig;
+  return { sig, subscribers };
+}
+function signal(initialValue) {
+  return createSignal(initialValue).sig;
 }
 function computed(fn) {
-  const value = signal(void 0);
-  const computation = new ReactiveEffect(() => value.set(fn()));
+  const { sig: value, subscribers } = createSignal(void 0);
+  const computation = new ReactiveEffect(() => {
+    computation.stale = false;
+    value.set(fn());
+  });
+  computation.downstream = subscribers;
   computation.run();
-  const computedSignal = () => value();
-  computedSignal.peek = value.peek;
+  const refresh = () => {
+    if (!computation.stale || !computation.active) return;
+    try {
+      computation.run();
+    } catch (error) {
+      reportError(error);
+    }
+  };
+  const computedSignal = () => {
+    refresh();
+    return value();
+  };
+  computedSignal.peek = () => {
+    refresh();
+    return value.peek();
+  };
   computedSignal.isSignal = true;
   computedSignal.stop = () => computation.stop();
   return computedSignal;
@@ -188,7 +249,7 @@ function createScheduler(driver = null) {
     queue2.clear();
     for (const job of jobs) {
       try {
-        job.run();
+        job.runQueued();
       } catch (error) {
         reportError(error);
       }
@@ -201,6 +262,8 @@ function createScheduler(driver = null) {
   };
   return {
     schedule,
+    // Takes a job back out, for an effect stopped or paused while it waited. True if it was in.
+    unschedule: (job) => queue2.delete(job),
     flush,
     get size() {
       return queue2.size;
@@ -245,6 +308,9 @@ function effect(fn, options = {}) {
   const { scheduler, lazy = false } = options;
   const enqueue = !scheduler ? void 0 : typeof scheduler === "function" ? scheduler : (job) => scheduler.schedule(job);
   const e = new ReactiveEffect(fn, enqueue);
+  if (scheduler && typeof scheduler.unschedule === "function") {
+    e.unschedule = (job) => scheduler.unschedule(job);
+  }
   if (!lazy) e.run();
   const handle = () => e.stop();
   handle.stop = () => e.stop();
@@ -289,7 +355,7 @@ function tweened(initialValue, duration = 400, easing = (t) => t, interpolate = 
   };
   const tick = (time) => {
     if (startTime === null) startTime = time;
-    const progress = Math.min((time - startTime) / duration, 1);
+    const progress = Math.min(Math.max(0, time - startTime) / duration, 1);
     value.set(progress < 1 ? interpolate(from, to, easing(progress)) : to);
     if (progress < 1) frameId = rafSchedule(tick);
     else stopAnimation();
@@ -297,10 +363,15 @@ function tweened(initialValue, duration = 400, easing = (t) => t, interpolate = 
   const sig = () => value();
   sig.peek = value.peek;
   sig.isSignal = true;
-  sig.target = target;
+  const targetView = () => target();
+  targetView.peek = target.peek;
+  targetView.isSignal = true;
+  targetView.set = (newValue) => sig.set(newValue);
+  targetView.update = (updater) => sig.update(updater);
+  sig.target = targetView;
   sig.set = (newValue) => {
     if (interpolate === lerpNumber && (typeof newValue !== "number" || !isFinite(newValue))) {
-      reportError(new Error(`tweened() interpolates numbers; got ${JSON.stringify(newValue)}`));
+      reportError(new Error(`tweened() interpolates numbers; got ${String(newValue)}`), "write refused");
       return;
     }
     if (newValue === to) return;
@@ -308,10 +379,14 @@ function tweened(initialValue, duration = 400, easing = (t) => t, interpolate = 
     from = value.peek();
     to = newValue;
     target.set(newValue);
-    if (duration === 0) value.set(to);
-    else frameId = rafSchedule(tick);
+    if (duration === 0) {
+      value.set(to);
+    } else {
+      startTime = now();
+      frameId = rafSchedule(tick);
+    }
   };
-  sig.update = (updater) => sig.set(updater(value.peek()));
+  sig.update = (updater) => sig.set(updater(target.peek()));
   sig.reset = (newValue) => {
     stopAnimation();
     from = newValue;
@@ -360,12 +435,14 @@ function precision(step) {
   }
   return p;
 }
-function formatFloat(value, step) {
-  return parseFloat(value).toFixed(precision(step));
+var decimals = (step, base) => Math.max(precision(step), isFinite(base) ? precision(base) : 0);
+function formatFloat(value, step, base = 0) {
+  return parseFloat(value).toFixed(decimals(step, base));
 }
 function snap(value, step, min, max) {
-  const snapped = Math.round(value / step) * step;
-  return parseFloat(Math.max(min, Math.min(max, snapped)).toFixed(precision(step)));
+  const base = isFinite(min) ? min : 0;
+  const snapped = base + Math.round((value - base) / step) * step;
+  return Math.max(min, Math.min(max, parseFloat(snapped.toFixed(decimals(step, base)))));
 }
 
 // src/curve.js
@@ -380,9 +457,11 @@ function normalizeCurve(value) {
   }
   return asNumber;
 }
+function curveFitsRange(curve, min, max) {
+  return curve !== "log" || min !== 0 && max !== 0 && Math.sign(min) === Math.sign(max);
+}
 function assertCurveRange(curve, min, max, where = "range-slider") {
-  if (curve !== "log") return;
-  if (min === 0 || max === 0 || Math.sign(min) !== Math.sign(max)) {
+  if (!curveFitsRange(curve, min, max)) {
     throw new RangeError(
       `[guspira] ${where}: curve "log" needs min and max to be non-zero and the same sign (given ${min} to ${max}) — 0 has no logarithm. Use a number like curve: 2 for a low-end bias on a range that includes zero.`
     );
@@ -423,8 +502,12 @@ var RangeSlider = class extends HTMLElement {
     this._syncingAttribute = false;
     this._listening = false;
     this._dragRect = null;
+    this._valueSet = false;
+    this._wasDual = false;
+    this._pointerId = null;
+    this._curveChecked = true;
     this._onPointerMove = (e) => this.handleDragMove(e);
-    this._onPointerUp = () => this.handleDragEnd();
+    this._onPointerUp = (e) => this.handleDragEnd(e);
   }
   static get observedAttributes() {
     return ["min", "max", "step", "value", "dual", "disabled", "curve"];
@@ -548,34 +631,77 @@ var RangeSlider = class extends HTMLElement {
     }
     if (!this.hasAttribute("tabindex")) this.setAttribute("tabindex", "0");
     if (!this.hasAttribute("role")) this.setAttribute("role", "slider");
-    assertCurveRange(this._curve, this._min, this._max);
+    this._checkCurveSoon();
     this.updateUI();
     this.addEventListeners();
   }
-  // Drag tracking is on window (the pointer leaves the element constantly), so it has to
-  // be torn down explicitly or every slider ever created stays reachable.
+  // A drag cannot outlive the element: its pointerup would never be heard.
   disconnectedCallback() {
+    this._stopTracking();
+    this.isDragging = false;
+    this._dragRect = null;
+    if (this.elements) this.elements.container.classList.remove("immediate");
+  }
+  // Drag tracking is on window, for the length of a drag and the pointer that started it.
+  _stopTracking() {
     window.removeEventListener("pointermove", this._onPointerMove);
     window.removeEventListener("pointerup", this._onPointerUp);
     window.removeEventListener("pointercancel", this._onPointerUp);
+    this._pointerId = null;
+  }
+  // The track in use: a log track over a range it cannot cover falls back to linear.
+  _track() {
+    return curveFitsRange(this._curve, this._min, this._max) ? this._curve : 1;
+  }
+  // Said once the assignments have settled, not part-way through them.
+  _checkCurveSoon() {
+    if (!this._curveChecked) return;
+    this._curveChecked = false;
+    queueMicrotask(() => {
+      this._curveChecked = true;
+      if (this.isConnected && !curveFitsRange(this._curve, this._min, this._max)) {
+        console.warn(
+          `[guspira] range-slider: curve "log" needs min and max to be non-zero and the same sign (given ${this._min} to ${this._max}) — using a linear track instead`
+        );
+      }
+    });
+  }
+  // An unusable step is ignored rather than turned into NaN values.
+  _setStep(value) {
+    const step = parseFloat(value);
+    if (Number.isFinite(step) && step > 0) this._step = step;
+  }
+  // Until given a value the thumb sits mid-range, and a dual slider spans the range.
+  _defaultValue() {
+    if (this._valueSet) return;
+    if (this.hasAttribute("dual")) {
+      this._valMin = this._min;
+      this._valMax = this._max;
+    } else {
+      this._valMax = snap((this._min + this._max) / 2, this._step, this._min, this._max);
+    }
   }
   attributeChangedCallback(name, oldValue, newValue) {
     if (oldValue === newValue || this._syncingAttribute) return;
     switch (name) {
       case "min":
         this._min = parseFloat(newValue);
+        this._checkCurveSoon();
         break;
       case "max":
         this._max = parseFloat(newValue);
+        this._checkCurveSoon();
         break;
       case "step":
-        this._step = parseFloat(newValue);
+        this._setStep(newValue);
         break;
       case "curve":
         this._curve = normalizeCurve(newValue);
+        this._checkCurveSoon();
         break;
       case "value":
         if (newValue === null) break;
+        this._valueSet = true;
         if (newValue.includes(",")) {
           const parts = newValue.split(",");
           this._valMin = parseFloat(parts[0]);
@@ -594,15 +720,16 @@ var RangeSlider = class extends HTMLElement {
       this.elements.container.addEventListener("pointerdown", (e) => this.handleDragStart(e));
       this.addEventListener("keydown", (e) => this.handleKeyDown(e));
     }
+  }
+  handleDragStart(e) {
+    if (this.hasAttribute("disabled") || e.button !== 0) return;
+    this.elements.container.classList.add("immediate");
+    this.isDragging = true;
+    this._pointerId = e.pointerId;
     window.addEventListener("pointermove", this._onPointerMove);
     window.addEventListener("pointerup", this._onPointerUp);
     window.addEventListener("pointercancel", this._onPointerUp);
-  }
-  handleDragStart(e) {
-    if (this.hasAttribute("disabled")) return;
-    this.elements.container.classList.add("immediate");
-    this.isDragging = true;
-    this.focus();
+    this.focus({ preventScroll: true });
     this._dragRect = this.getBoundingClientRect();
     this.elements.thumbMin.style.zIndex = 2;
     this.elements.thumbMax.style.zIndex = 2;
@@ -628,11 +755,12 @@ var RangeSlider = class extends HTMLElement {
     this.updateValueFromPointer(e);
   }
   handleDragMove(e) {
-    if (!this.isDragging) return;
+    if (!this.isDragging || e.pointerId !== this._pointerId) return;
     this.updateValueFromPointer(e);
   }
-  handleDragEnd() {
-    if (!this.isDragging) return;
+  handleDragEnd(e) {
+    if (!this.isDragging || e && e.pointerId !== this._pointerId) return;
+    this._stopTracking();
     this.isDragging = false;
     this._dragRect = null;
     this.dispatchEvent(new Event("change", { bubbles: true }));
@@ -688,6 +816,7 @@ var RangeSlider = class extends HTMLElement {
   // Snaps to the step grid and clamps to the range (shared with the panel, so the value
   // shown and the value stored can't disagree), then keeps the handles from crossing.
   applyValue(rawValue) {
+    this._valueSet = true;
     let value = snap(rawValue, this._step, this._min, this._max);
     if (this.currentHandle === "min") {
       if (value > this._valMax) value = this._valMax;
@@ -699,13 +828,14 @@ var RangeSlider = class extends HTMLElement {
     this.updateUI();
   }
   percentageToValue(percentage) {
-    return curveToValue(percentage, this._min, this._max, this._curve);
+    return curveToValue(percentage, this._min, this._max, this._track());
   }
   // Returns 0..100: it feeds CSS `left`, which is where it has always gone.
   valueToPercentage(value) {
-    return valueToCurve(value, this._min, this._max, this._curve) * 100;
+    return valueToCurve(value, this._min, this._max, this._track()) * 100;
   }
   updateUI() {
+    this._defaultValue();
     if (!this.elements) return;
     const dual = this.hasAttribute("dual");
     const clamp = (p) => Math.max(0, Math.min(100, p));
@@ -720,7 +850,10 @@ var RangeSlider = class extends HTMLElement {
       this.setAttribute("aria-valuemin", this._min);
       this.setAttribute("aria-valuemax", this._max);
     }
-    this.setAttribute("aria-valuenow", dual ? `${this._valMin},${this._valMax}` : this._valMax);
+    this.setAttribute("aria-valuenow", this._valMax);
+    if (dual) this.setAttribute("aria-valuetext", `${this._valMin} to ${this._valMax}`);
+    else if (this._wasDual) this.removeAttribute("aria-valuetext");
+    this._wasDual = dual;
     this.updateFormValue();
   }
   updateFormValue() {
@@ -738,12 +871,14 @@ var RangeSlider = class extends HTMLElement {
   // element already has. Without this guard every pointer move repaints the thumbs, rewrites
   // three aria attributes and re-reports the form value a second time, for nothing.
   set value(val) {
+    const given = this._valueSet;
+    this._valueSet = true;
     if (Array.isArray(val)) {
-      if (val[0] === this._valMin && val[1] === this._valMax) return;
+      if (given && val[0] === this._valMin && val[1] === this._valMax) return;
       this._valMin = val[0];
       this._valMax = val[1];
     } else {
-      if (val === this._valMax) return;
+      if (given && val === this._valMax) return;
       this._valMax = val;
     }
     this.updateUI();
@@ -753,6 +888,7 @@ var RangeSlider = class extends HTMLElement {
   }
   set min(value) {
     this._min = parseFloat(value);
+    this._checkCurveSoon();
     this.updateUI();
   }
   get max() {
@@ -760,13 +896,14 @@ var RangeSlider = class extends HTMLElement {
   }
   set max(value) {
     this._max = parseFloat(value);
+    this._checkCurveSoon();
     this.updateUI();
   }
   get step() {
     return this._step;
   }
   set step(value) {
-    this._step = parseFloat(value);
+    this._setStep(value);
     this.updateUI();
   }
   get curve() {
@@ -774,7 +911,7 @@ var RangeSlider = class extends HTMLElement {
   }
   set curve(value) {
     this._curve = normalizeCurve(value);
-    assertCurveRange(this._curve, this._min, this._max);
+    this._checkCurveSoon();
     this.updateUI();
   }
 };
@@ -837,7 +974,7 @@ var StatsGraph = class extends HTMLElement {
             flex-wrap: wrap;
             gap: 1px 9px;
             margin-top: 3px;
-            font-size: 10px;
+            font-size: calc(var(--gui-font-size, 13px) - 3px);
             line-height: 1.5;
             color: var(--gui-muted, #888);
           }
@@ -864,6 +1001,7 @@ var StatsGraph = class extends HTMLElement {
     }
     if (typeof IntersectionObserver === "function") {
       const io = new IntersectionObserver(([entry]) => {
+        if (entry.isIntersecting && !this._visible) this._dirty = true;
         this._visible = entry.isIntersecting;
       });
       io.observe(this);
@@ -918,11 +1056,12 @@ var StatsGraph = class extends HTMLElement {
   _buildLegend() {
     if (!this.legendEl) return;
     this.legendEl.textContent = "";
+    this._legendValues = null;
     if (!this._series) return;
     this._legendValues = this._series.map((name, index) => {
       const item = document.createElement("span");
       const swatch = document.createElement("i");
-      swatch.style.background = this._colour(index);
+      swatch.style.background = this._swatch(index);
       const value = document.createElement("b");
       item.append(swatch, document.createTextNode(name), value);
       this.legendEl.append(item);
@@ -964,12 +1103,16 @@ var StatsGraph = class extends HTMLElement {
     if (last === void 0) return 0;
     return Array.isArray(last) ? last.reduce((sum, v) => sum + v, 0) : last;
   }
-  _colour(index) {
+  _colour(index, style = getComputedStyle(this)) {
     if (index >= PALETTE.length) {
       return `hsl(${(index - PALETTE.length + 1) * GENERATED_HUE_STEP % 360} 62% 52%)`;
     }
     const [name, fallback] = PALETTE[index].split(", ");
-    return getComputedStyle(this).getPropertyValue(name).trim() || fallback;
+    return style.getPropertyValue(name).trim() || fallback;
+  }
+  // The same colour as CSS rather than as a resolved value, so a swatch follows its variable.
+  _swatch(index) {
+    return index < PALETTE.length ? `var(${PALETTE[index]})` : this._colour(index);
   }
   draw() {
     if (!this.ctx) return;
@@ -977,9 +1120,11 @@ var StatsGraph = class extends HTMLElement {
     const width = this.canvas.clientWidth;
     const height = this.canvas.clientHeight;
     if (!width || !height) return;
-    if (this.canvas.width !== Math.round(width * dpr)) {
-      this.canvas.width = Math.round(width * dpr);
-      this.canvas.height = Math.round(height * dpr);
+    const pixelWidth = Math.round(width * dpr);
+    const pixelHeight = Math.round(height * dpr);
+    if (this.canvas.width !== pixelWidth || this.canvas.height !== pixelHeight) {
+      this.canvas.width = pixelWidth;
+      this.canvas.height = pixelHeight;
     }
     const ctx = this.ctx;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -996,11 +1141,12 @@ var StatsGraph = class extends HTMLElement {
     const warn = style.getPropertyValue("--gui-warn").trim() || "#c74900";
     this._updateLegend(performance.now());
     if (stacked) {
+      const colours = [];
       this._history.forEach((sample, index) => {
         const parts = Array.isArray(sample) ? sample : [sample];
         let base = min;
         parts.forEach((part, series) => {
-          ctx.fillStyle = this._colour(series);
+          ctx.fillStyle = colours[series] ??= this._colour(series, style);
           const top = y(base + part);
           ctx.fillRect(index * columnWidth, top, Math.max(1, columnWidth - 0.5), y(base) - top);
           base += part;
@@ -1061,7 +1207,7 @@ var StatsGraph = class extends HTMLElement {
     return this._samples;
   }
   set min(value) {
-    this._min = parseFloat(value);
+    this._min = value === void 0 || value === null ? void 0 : parseFloat(value);
     this.draw();
   }
   get min() {
@@ -1194,10 +1340,25 @@ function randomHexColor() {
 
 // src/keyboard.js
 var TYPING_TAGS = /* @__PURE__ */ new Set(["INPUT", "SELECT", "TEXTAREA"]);
-function isTyping(target) {
-  if (!target) return false;
-  if (TYPING_TAGS.has(target.tagName)) return true;
-  return target.isContentEditable === true;
+var PRESSES = /* @__PURE__ */ new Set(["Space", "Enter", "NumpadEnter"]);
+var MOVES = /* @__PURE__ */ new Set([
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+  "Home",
+  "End",
+  "PageUp",
+  "PageDown"
+]);
+var PRESSABLE = "button, summary, a[href], [role=button], [role=tab], [role=radio]";
+var MOVABLE = "range-slider, [role=slider], [role=application], [role=radiogroup], [role=tablist]";
+function claims(target, code) {
+  if (!target || typeof target.closest !== "function") return false;
+  if (TYPING_TAGS.has(target.tagName) || target.isContentEditable === true) return true;
+  if (PRESSES.has(code)) return target.closest(PRESSABLE) !== null;
+  if (MOVES.has(code)) return target.closest(MOVABLE) !== null;
+  return false;
 }
 function bindKey(code, fn, opts = {}) {
   const {
@@ -1206,6 +1367,7 @@ function bindKey(code, fn, opts = {}) {
     alt = false,
     meta = false,
     allowWhileTyping = false,
+    repeat = false,
     target = window,
     preventDefault = false
   } = opts;
@@ -1213,7 +1375,8 @@ function bindKey(code, fn, opts = {}) {
     if (e.code !== code) return;
     if (e.ctrlKey !== ctrl || e.shiftKey !== shift || e.altKey !== alt) return;
     if (e.metaKey !== meta) return;
-    if (!allowWhileTyping && isTyping(e.target)) return;
+    if (e.repeat && !repeat) return;
+    if (!allowWhileTyping && claims(e.target, code)) return;
     if (preventDefault) e.preventDefault();
     fn(e);
   };
@@ -1223,10 +1386,13 @@ function bindKey(code, fn, opts = {}) {
 
 // src/gui.js
 var CHEVRON = `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>`;
-function composeRangeValue(min, max, step) {
-  return `${formatFloat(min, step)}–${formatFloat(max, step)}`;
+function composeRangeValue(lo, hi, step, base) {
+  return `${formatFloat(lo, step, base)}–${formatFloat(hi, step, base)}`;
 }
 function readOptions(opts) {
+  if (typeof opts === "function") {
+    console.warn("[guspira] a function was passed where options go — use { onChange: fn }");
+  }
   return opts && typeof opts === "object" ? opts : {};
 }
 function condition(...candidates) {
@@ -1246,17 +1412,18 @@ function makeScrubbable(input, { step, onScrub, enabled }) {
     e.preventDefault();
     origin = { x: e.clientX, value: parseFloat(input.value) || 0 };
     scrubbing = false;
+    try {
+      input.setPointerCapture(e.pointerId);
+    } catch {
+    }
   };
   const move = (e) => {
     if (!origin) return;
+    if (!(e.buttons & 1)) return up(e);
     const dx = e.clientX - origin.x;
     if (!scrubbing) {
       if (Math.abs(dx) < SCRUB_THRESHOLD) return;
       scrubbing = true;
-      try {
-        input.setPointerCapture(e.pointerId);
-      } catch {
-      }
       document.body.classList.add("gui-scrubbing");
     }
     onScrub(origin.value + dx * step() * (e.shiftKey ? 10 : 1));
@@ -1267,7 +1434,7 @@ function makeScrubbable(input, { step, onScrub, enabled }) {
       if (input.hasPointerCapture(e.pointerId)) input.releasePointerCapture(e.pointerId);
     } catch {
     }
-    if (!scrubbing) {
+    if (!scrubbing && e.type === "pointerup") {
       input.focus();
       input.select();
     }
@@ -1293,7 +1460,50 @@ function scrubStepFor(step, min, max) {
   return 1;
 }
 var targetOf = (sig) => sig.target || sig;
+var NATIVE_CONTROLS = "button, input, select, textarea";
+function syncDisabled(root) {
+  for (const node of root.querySelectorAll(`${NATIVE_CONTROLS}, [tabindex]`)) {
+    const off = node.closest(".gui-row.disabled, .gui-section.disabled") !== null;
+    if (node.matches(NATIVE_CONTROLS)) {
+      if (off && !node.disabled) {
+        node.disabled = true;
+        node.dataset.guiOff = "";
+      } else if (!off && "guiOff" in node.dataset) {
+        node.disabled = false;
+        delete node.dataset.guiOff;
+      }
+    } else if (off && node.tabIndex >= 0 && !("guiTabindex" in node.dataset)) {
+      node.dataset.guiTabindex = node.getAttribute("tabindex");
+      node.tabIndex = -1;
+    } else if (!off && "guiTabindex" in node.dataset) {
+      node.setAttribute("tabindex", node.dataset.guiTabindex);
+      delete node.dataset.guiTabindex;
+    }
+  }
+}
+function markDisabled(el, disabled) {
+  el.classList.toggle("disabled", disabled);
+  if (disabled) el.setAttribute("aria-disabled", "true");
+  else el.removeAttribute("aria-disabled");
+  syncDisabled(el);
+  queueMicrotask(() => syncDisabled(el));
+}
+var isOff = (controller) => controller.row.closest(".gui-row.disabled, .gui-section.disabled") !== null;
+function sliderStep(step, min, max, where) {
+  if (step === void 0) {
+    const range = Math.abs(max - min);
+    return range > 0 && Number.isFinite(range) ? 10 ** Math.floor(Math.log10(range / 100)) : 1;
+  }
+  if (typeof step !== "number" || !(step > 0) || !Number.isFinite(step)) {
+    throw new TypeError(
+      `[guspira] ${where}: step must be a positive number, not ${JSON.stringify(step)} — options go after it, or leave it out for a hundredth of the range`
+    );
+  }
+  return step;
+}
+var RANDOMIZE_HINT = "Click, or press Alt+R with the control focused, to randomize";
 var sectionId = 0;
+var labelId = 0;
 var optionValue = (opt) => Array.isArray(opt) ? opt[0] : opt;
 var optionLabel = (opt) => Array.isArray(opt) ? opt[1] : opt;
 var Controller = class {
@@ -1302,14 +1512,33 @@ var Controller = class {
     this.row = row;
     this.el = null;
     this.labelEl = null;
-    this.randomize = null;
+    this._randomize = null;
     this._stops = [];
     this._destroyed = false;
   }
-  // Registers an effect owned by this row.
+  // The row's reroll: assign one to make the control randomizable, null to take it out.
+  get randomize() {
+    return this._randomize;
+  }
+  set randomize(fn) {
+    this._randomize = typeof fn === "function" ? fn : null;
+    const label = this.labelEl;
+    if (!label) return;
+    label.classList.toggle("gui-randomizable", !!this._randomize);
+    if (this._randomize && !label.title) label.title = RANDOMIZE_HINT;
+    else if (!this._randomize && label.title === RANDOMIZE_HINT) label.title = "";
+  }
+  // Registers an effect owned by this row. Untracked, so the row lives until destroy().
   bind(fn) {
-    this._stops.push(effect(fn));
+    this._stops.push(untrack(() => effect(fn)));
     return this;
+  }
+  // Names the widget after the row's label, for anything that is not looking at it.
+  labelled(el) {
+    if (!this.labelEl) return el;
+    if (!this.labelEl.id) this.labelEl.id = `gui-label-${++labelId}`;
+    el.setAttribute("aria-labelledby", this.labelEl.id);
+    return el;
   }
   onDestroy(fn) {
     this._stops.push(fn);
@@ -1320,7 +1549,7 @@ var Controller = class {
     return this;
   }
   setDisabled(disabled) {
-    this.row.classList.toggle("disabled", !!disabled);
+    markDisabled(this.row, !!disabled);
     return this;
   }
   destroy() {
@@ -1413,15 +1642,16 @@ var GUI = class {
       this.rowsExpanded.set(!this.rowsExpanded.peek());
       this._writeUIState("expanded", this.rowsExpanded.peek());
     });
-    this._stops = [
+    this._stops = untrack(() => [
       effect(() => {
         const expanded = this.rowsExpanded();
         this.rows.classList.toggle("visible", expanded);
+        this.rows.inert = !expanded;
         this.container.classList.toggle("collapsed", !expanded);
         titleEl.setAttribute("aria-expanded", String(expanded));
       }),
       effect(() => this._syncTabs(this._activeTab()))
-    ];
+    ]);
     el.append(this.container);
     if (opts.visible !== false) this.show();
   }
@@ -1464,10 +1694,16 @@ var GUI = class {
     if (t !== -1) {
       this._tabs.splice(t, 1);
       this._tabs.forEach((tab, i2) => tab.index = i2);
-      const active = Math.min(this._activeTab.peek(), this._tabs.length - 1);
+      const was = this._activeTab.peek();
+      const active = Math.min(t < was ? was - 1 : was, this._tabs.length - 1);
       this._activeTab.set(Math.max(0, active));
       this._syncTabs();
     }
+    const gone = (el) => el === controller.row || controller.row.contains(el);
+    if (gone(this._currentTab)) {
+      this._currentTab = this._tabs.length ? this._tabs[this._tabs.length - 1].panel : this.rows;
+    }
+    if (gone(this._current)) this._current = this._currentTab;
   }
   // Panel layout state (folded/expanded/active tab) — kept apart from app parameters, and
   // silently skipped when no storageKey was given or storage is unavailable.
@@ -1534,9 +1770,10 @@ var GUI = class {
   // Choosing a tab is the only thing that records one, so the remembered tab is always a
   // deliberate choice rather than a side effect of building the panel.
   selectTab(index) {
-    this._activeTab.set(index);
     const tab = this._tabs[index];
-    if (tab) this._writeUIState("tab", tab.button.textContent);
+    if (!tab) return this;
+    this._activeTab.set(index);
+    this._writeUIState("tab", tab.button.textContent);
     return this;
   }
   // A titled group inside the current tab. `visibleWhen` hides the whole group (an
@@ -1556,10 +1793,13 @@ var GUI = class {
     title.id = `gui-section-${++sectionId}`;
     const body = document.createElement("div");
     body.className = "gui-section-body";
+    body.setAttribute("role", "group");
+    body.setAttribute("aria-labelledby", title.id);
     section.append(title, body);
     this._currentTab.append(section);
     this._current = body;
-    const tabName = this._tabs.length ? this._tabs[this._tabs.length - 1].button.textContent : "";
+    const tab = this._tabs.find((t) => t.panel === this._currentTab);
+    const tabName = tab ? tab.button.textContent : "";
     const stateKey = `section:${tabName}/${name}`;
     const open = signal(collapsible ? this._readUIState(stateKey, opts.open ?? true) : true);
     const controller = new Section(this, section, body, open);
@@ -1576,13 +1816,14 @@ var GUI = class {
       controller.bind(() => {
         const isOpen = open();
         section.classList.toggle("open", isOpen);
+        body.inert = !isOpen;
         title.setAttribute("aria-expanded", String(isOpen));
       });
     } else {
       section.classList.add("open");
     }
     if (visible) controller.bind(() => section.classList.toggle("gui-hidden", !visible()));
-    if (disabled) controller.bind(() => section.classList.toggle("disabled", !!disabled()));
+    if (disabled) controller.bind(() => markDisabled(section, !!disabled()));
     this._controllers.push(controller);
     return controller;
   }
@@ -1602,6 +1843,10 @@ var GUI = class {
     const prevTab = this._currentTab;
     this._current = container;
     if (target instanceof Tab) this._currentTab = target.panel;
+    if (target instanceof Section) {
+      const tab = this._tabs.find((t) => t.panel.contains(target.row));
+      this._currentTab = tab ? tab.panel : this.rows;
+    }
     if (!fn) return this;
     try {
       return fn();
@@ -1624,38 +1869,32 @@ var GUI = class {
       controller.labelEl = labelEl;
     }
     const disabled = condition(opts.disabledWhen, opts.disabled);
-    if (disabled) controller.bind(() => row.classList.toggle("disabled", !!disabled()));
+    if (disabled) controller.bind(() => markDisabled(row, !!disabled()));
     const visible = condition(opts.visibleWhen, opts.visible);
     if (visible) controller.bind(() => row.classList.toggle("gui-hidden", !visible()));
-    this._current.append(row);
-    this._controllers.push(controller);
-    return controller;
-  }
-  // Clicking a control's label rolls a new value for it. `fn` does the rolling; wiring it
-  // here also enrolls the control in panel-wide randomisation.
-  _randomizable(controller, fn, opts) {
-    if (opts.randomizable === false) return;
-    controller.randomize = fn;
-    if (!controller.labelEl) return;
-    controller.labelEl.classList.add("gui-randomizable");
-    controller.labelEl.title = opts.title || "Click, or press Alt+R with the control focused, to randomize";
-    const handler = () => {
-      if (!controller.randomize || controller.row.classList.contains("disabled")) return;
+    const reroll = () => {
+      if (!controller.randomize || isOff(controller)) return;
       this._beforeRandomize();
       controller.randomize();
     };
-    const keys = (e) => {
-      if (e.key !== "r" && e.key !== "R") return;
-      if (!e.altKey || e.ctrlKey || e.metaKey) return;
+    row.addEventListener("keydown", (e) => {
+      const letter = /^[a-z]$/i.test(e.key);
+      if (letter ? e.key.toLowerCase() !== "r" : e.code !== "KeyR") return;
+      if (!e.altKey || e.ctrlKey || e.metaKey || !controller.randomize) return;
       e.preventDefault();
-      handler();
-    };
-    controller.labelEl.addEventListener("click", handler);
-    controller.row.addEventListener("keydown", keys);
-    controller.onDestroy(() => {
-      controller.labelEl.removeEventListener("click", handler);
-      controller.row.removeEventListener("keydown", keys);
+      reroll();
     });
+    if (controller.labelEl) controller.labelEl.addEventListener("click", reroll);
+    this._current.append(row);
+    queueMicrotask(() => {
+      if (isOff(controller)) syncDisabled(row);
+    });
+    this._controllers.push(controller);
+    return controller;
+  }
+  // The built-in controls' way of taking `randomizable: false`.
+  _randomizable(controller, fn, opts) {
+    if (opts.randomizable !== false) controller.randomize = fn;
   }
   _beforeRandomize() {
     if (this.options.onBeforeRandomize) this.options.onBeforeRandomize();
@@ -1670,9 +1909,11 @@ var GUI = class {
       start = at + 1;
     }
     this._beforeRandomize();
-    this._controllers.slice(Math.max(0, start)).forEach((c) => {
-      if (!c.randomize || c.row.classList.contains("disabled")) return;
-      c.randomize();
+    batch(() => {
+      this._controllers.slice(Math.max(0, start)).forEach((c) => {
+        if (!c.randomize || isOff(c)) return;
+        c.randomize();
+      });
     });
     return this;
   }
@@ -1709,7 +1950,7 @@ var GUI = class {
     };
     controller = this.addButton(label, run, opts);
     if (opts.key !== null) {
-      const unbind = bindKey(opts.key || "KeyR", run);
+      const unbind = bindKey(opts.key || "KeyR", run, { repeat: true });
       this._unbinds.push(unbind);
       controller.onDestroy(unbind);
     }
@@ -1742,7 +1983,7 @@ var GUI = class {
     const controller = this.createRow(label, opts);
     this._randomizable(controller, () => {
       sig.set(randomBool());
-      opts.onChange && opts.onChange(sig());
+      opts.onChange && opts.onChange(targetOf(sig).peek());
     }, opts);
     const input = document.createElement("input");
     input.type = "checkbox";
@@ -1752,7 +1993,7 @@ var GUI = class {
       opts.onChange && opts.onChange(input.checked);
     };
     controller.bind(() => input.checked = targetOf(sig)());
-    controller.row.append(input);
+    controller.row.append(controller.labelled(input));
     controller.el = input;
     controller.signal = sig;
     return controller;
@@ -1764,7 +2005,7 @@ var GUI = class {
     const controller = this.createRow(label, opts);
     this._randomizable(controller, () => {
       sig.set(optionValue(randomElement(controller.options)));
-      opts.onChange && opts.onChange(sig());
+      opts.onChange && opts.onChange(targetOf(sig).peek());
     }, opts);
     const select = document.createElement("select");
     select.className = "gui-select";
@@ -1793,20 +2034,22 @@ var GUI = class {
       const v = String(targetOf(sig)());
       if (optionValues.has(v)) select.value = v;
     });
-    controller.row.append(select);
+    controller.row.append(controller.labelled(select));
     controller.el = select;
     controller.signal = sig;
     return controller;
   }
+  // `step` may be left out, for a hundredth of the range.
   addSlider(label, value, min, max, step, a) {
     const opts = readOptions(a);
+    step = sliderStep(step, min, max, "addSlider");
     const sig = toSignal(value);
     const curve = normalizeCurve(opts.curve);
     assertCurveRange(curve, min, max, "addSlider");
     const controller = this.createRow(label, opts);
     this._randomizable(controller, () => {
       sig.set(snap(curveToValue(random(), min, max, curve), step, min, max));
-      opts.onChange && opts.onChange(sig());
+      opts.onChange && opts.onChange(targetOf(sig).peek());
     }, opts);
     const wrapper = document.createElement("div");
     wrapper.className = "gui-slider-container";
@@ -1831,12 +2074,12 @@ var GUI = class {
       const editor = document.createElement("input");
       editor.type = "text";
       editor.className = "gui-slider-edit";
-      editor.value = formatFloat(targetOf(sig).peek(), step);
+      editor.value = formatFloat(targetOf(sig).peek(), step, min);
       valDisplay.replaceWith(editor);
       editor.focus();
       editor.select();
       let committed = false;
-      const commit = (accept) => {
+      const commit = (accept, byKey) => {
         if (committed) return;
         committed = true;
         editor.onblur = null;
@@ -1850,11 +2093,12 @@ var GUI = class {
         }
         editor.replaceWith(valDisplay);
         delete valDisplay.dataset.editing;
+        if (byKey) input.focus();
       };
-      editor.onblur = () => commit(true);
+      editor.onblur = () => commit(true, false);
       editor.onkeydown = (e) => {
-        if (e.key === "Enter") commit(true);
-        else if (e.key === "Escape") commit(false);
+        if (e.key === "Enter") commit(true, true);
+        else if (e.key === "Escape") commit(false, true);
       };
     };
     valDisplay.addEventListener("click", startEditing);
@@ -1866,9 +2110,9 @@ var GUI = class {
     controller.bind(() => {
       const v = targetOf(sig)();
       input.value = v;
-      valDisplay.textContent = formatFloat(v, step);
+      valDisplay.textContent = formatFloat(v, step, min);
     });
-    wrapper.append(input, valDisplay);
+    wrapper.append(controller.labelled(input), valDisplay);
     controller.row.append(wrapper);
     controller.el = input;
     controller.signal = sig;
@@ -1877,6 +2121,7 @@ var GUI = class {
   // Two handles over one range; the signal holds [min, max].
   addRangeSlider(label, value, min, max, step, a) {
     const opts = readOptions(a);
+    step = sliderStep(step, min, max, "addRangeSlider");
     const sig = toSignal(value);
     const curve = normalizeCurve(opts.curve);
     assertCurveRange(curve, min, max, "addRangeSlider");
@@ -1887,7 +2132,7 @@ var GUI = class {
       const lo = snap(curveToValue(Math.min(first, second), min, max, curve), step, min, max);
       const hi = snap(curveToValue(Math.max(first, second), min, max, curve), step, min, max);
       sig.set([lo, hi]);
-      opts.onChange && opts.onChange(sig());
+      opts.onChange && opts.onChange(targetOf(sig).peek());
     }, opts);
     const wrapper = document.createElement("div");
     wrapper.className = "gui-slider-container";
@@ -1901,16 +2146,16 @@ var GUI = class {
     input.oninput = () => {
       const [lo, hi] = input.value;
       sig.set([parseFloat(lo), parseFloat(hi)]);
-      opts.onChange && opts.onChange(sig());
+      opts.onChange && opts.onChange(targetOf(sig).peek());
     };
     const valDisplay = document.createElement("span");
     valDisplay.className = "gui-slider-val gui-range-val";
     controller.bind(() => {
       const [lo, hi] = targetOf(sig)();
       input.value = [lo, hi];
-      valDisplay.textContent = composeRangeValue(lo, hi, step);
+      valDisplay.textContent = composeRangeValue(lo, hi, step, min);
     });
-    wrapper.append(input, valDisplay);
+    wrapper.append(controller.labelled(input), valDisplay);
     controller.row.append(wrapper);
     controller.el = input;
     controller.signal = sig;
@@ -1926,7 +2171,7 @@ var GUI = class {
     const controller = this.createRow(label, opts);
     this._randomizable(controller, () => {
       sig.set(codec.fromHex(randomHexColor(), targetOf(sig).peek()));
-      opts.onChange && opts.onChange(sig());
+      opts.onChange && opts.onChange(targetOf(sig).peek());
     }, opts);
     const input = document.createElement("input");
     input.type = "color";
@@ -1937,7 +2182,7 @@ var GUI = class {
       opts.onChange && opts.onChange(next);
     };
     controller.bind(() => input.value = codec.toHex(targetOf(sig)()));
-    controller.row.append(input);
+    controller.row.append(controller.labelled(input));
     controller.el = input;
     controller.signal = sig;
     return controller;
@@ -1954,11 +2199,13 @@ var GUI = class {
       sig.set(input.value);
       opts.onChange && opts.onChange(input.value);
     };
+    const show = () => input.value = targetOf(sig).peek() ?? "";
     controller.bind(() => {
-      const v = targetOf(sig)();
-      if (document.activeElement !== input) input.value = v;
+      targetOf(sig)();
+      if (document.activeElement !== input) show();
     });
-    controller.row.append(input);
+    input.addEventListener("blur", show);
+    controller.row.append(controller.labelled(input));
     controller.el = input;
     controller.signal = sig;
     return controller;
@@ -1977,10 +2224,11 @@ var GUI = class {
       sig.set(v);
       opts.onChange && opts.onChange(v);
     };
+    const constrain = (v) => opts.step === void 0 ? Math.min(opts.max ?? Infinity, Math.max(opts.min ?? -Infinity, v)) : snap(v, opts.step, opts.min ?? -Infinity, opts.max ?? Infinity);
     input.oninput = () => {
       const v = parseFloat(input.value);
       if (!isFinite(v)) return;
-      commit(v);
+      commit(constrain(v));
     };
     if (opts.scrub !== false) {
       controller.onDestroy(
@@ -1991,11 +2239,13 @@ var GUI = class {
         })
       );
     }
+    const show = () => input.value = targetOf(sig).peek();
     controller.bind(() => {
-      const v = targetOf(sig)();
-      if (document.activeElement !== input) input.value = v;
+      targetOf(sig)();
+      if (document.activeElement !== input) show();
     });
-    controller.row.append(input);
+    input.addEventListener("blur", show);
+    controller.row.append(controller.labelled(input));
     controller.el = input;
     controller.signal = sig;
     return controller;
@@ -2058,14 +2308,18 @@ var GUI = class {
       wrap.append(input);
       return input;
     });
+    const show = (input, i) => {
+      const v = targetOf(sig).peek();
+      const step = per(opts.step, i);
+      input.value = step === void 0 ? v[i] : formatFloat(v[i], step, per(opts.min, i));
+    };
     controller.bind(() => {
-      const v = targetOf(sig)();
+      targetOf(sig)();
       inputs.forEach((input, i) => {
-        if (document.activeElement === input) return;
-        const step = per(opts.step, i);
-        input.value = step === void 0 ? v[i] : formatFloat(v[i], step);
+        if (document.activeElement !== input) show(input, i);
       });
     });
+    inputs.forEach((input, i) => input.addEventListener("blur", () => show(input, i)));
     this._randomizable(
       controller,
       () => {
@@ -2138,9 +2392,12 @@ var GUI = class {
     };
     const enabled = () => !controller.row.classList.contains("disabled");
     pad.addEventListener("pointerdown", (e) => {
-      if (!enabled()) return;
-      pad.setPointerCapture(e.pointerId);
-      pad.focus();
+      if (e.button !== 0 || !enabled()) return;
+      try {
+        pad.setPointerCapture(e.pointerId);
+      } catch {
+      }
+      pad.focus({ preventScroll: true });
       writeFromPointer(e);
     });
     pad.addEventListener("pointermove", (e) => {
@@ -2197,8 +2454,9 @@ var GUI = class {
       button.title = String(optionLabel(option));
       button.setAttribute("role", "radio");
       button.onclick = () => {
+        if (optionValue(option) === targetOf(sig).peek()) return;
         sig.set(optionValue(option));
-        opts.onChange && opts.onChange(sig());
+        opts.onChange && opts.onChange(targetOf(sig).peek());
       };
       group.append(button);
       return { button, value: optionValue(option) };
@@ -2208,9 +2466,11 @@ var GUI = class {
       if (!step || controller.row.classList.contains("disabled")) return;
       e.preventDefault();
       const at = segments.findIndex((segment) => segment.value === targetOf(sig).peek());
-      const next = segments[(at + step + segments.length) % segments.length];
+      const from = at === -1 && step < 0 ? 0 : at;
+      const next = segments[(from + step + segments.length) % segments.length];
+      if (next.value === targetOf(sig).peek()) return;
       sig.set(next.value);
-      opts.onChange && opts.onChange(sig());
+      opts.onChange && opts.onChange(targetOf(sig).peek());
       next.button.focus();
     });
     controller.bind(() => {
@@ -2229,7 +2489,7 @@ var GUI = class {
       controller,
       () => {
         sig.set(optionValue(randomElement(options)));
-        opts.onChange && opts.onChange(sig());
+        opts.onChange && opts.onChange(targetOf(sig).peek());
       },
       opts
     );
@@ -2258,11 +2518,13 @@ var GUI = class {
       sig.set(area.value);
       opts.onChange && opts.onChange(area.value);
     };
+    const show = () => area.value = targetOf(sig).peek() ?? "";
     controller.bind(() => {
-      const v = targetOf(sig)();
-      if (document.activeElement !== area) area.value = v ?? "";
+      targetOf(sig)();
+      if (document.activeElement !== area) show();
     });
-    controller.row.append(head, area);
+    area.addEventListener("blur", show);
+    controller.row.append(head, controller.labelled(area));
     controller.el = area;
     controller.signal = sig;
     return controller;
@@ -2293,7 +2555,7 @@ var GUI = class {
     if (opts.over !== void 0) graph.over = opts.over;
     if (opts.below !== void 0) graph.below = opts.below;
     if (opts.samples !== void 0) graph.samples = opts.samples;
-    const read = sources.length > 1 ? () => sources.map((sig) => targetOf(sig).peek()) : () => targetOf(sources[0]).peek();
+    const read = sources.length > 1 ? () => sources.map((sig) => sig.peek()) : () => sources[0].peek();
     const paused = condition(opts.pausedWhen, opts.paused);
     graph.source = paused ? () => paused() ? void 0 : read() : read;
     if (paused) controller.bind(() => wrap.classList.toggle("gui-graph-paused", !!paused()));
@@ -2363,8 +2625,8 @@ var GUI = class {
     return this.createRow(text, opts);
   }
   // Free-form HTML inside a row — a description, a legend, a link.
-  addText(html) {
-    const controller = this.createRow();
+  addText(html, opts = {}) {
+    const controller = this.createRow(null, opts);
     const content = document.createElement("div");
     content.className = "gui-text";
     content.innerHTML = html;
@@ -2372,8 +2634,8 @@ var GUI = class {
     controller.el = content;
     return controller;
   }
-  addSeparator() {
-    const controller = this.createRow();
+  addSeparator(opts = {}) {
+    const controller = this.createRow(null, opts);
     const line = document.createElement("div");
     line.className = "gui-separator";
     controller.row.append(line);
@@ -2392,10 +2654,11 @@ var GUI = class {
   // saved ones, and save/load/delete/export/import. Returns the controllers it created.
   addPresets(store, opts = {}) {
     const created = {};
-    if (opts.builtin !== false && store.builtinNames().length) {
+    if (opts.builtin !== false && store.builtinNames().length > 1) {
       const names = store.builtinNames();
       const pick = signal(names.includes(store.current.peek()) ? store.current.peek() : names[0]);
       created.builtin = this.addSelect(opts.label || "Preset", pick, names, {
+        randomizable: false,
         onChange: (name2) => store.apply(name2)
       });
       created.builtin.bind(
@@ -2424,7 +2687,7 @@ var GUI = class {
     };
     refresh();
     created.load = attach(created.saved, "Load", "Load the selected preset", () => {
-      if (selected()) store.apply(selected());
+      if (selected()) store.load(selected());
     });
     created.remove = attach(created.saved, "✕", "Delete the selected preset", () => {
       if (!selected()) return;
@@ -2439,7 +2702,7 @@ var GUI = class {
       store.save(key);
       refresh(key);
     });
-    const importFile = (file) => store.importFile(file).then(() => refresh()).catch((e) => {
+    const importFile = (file) => store.importFile(file).then(() => refresh(store.current.peek())).catch((e) => {
       console.warn("[guspira] could not import preset:", e);
       if (opts.onImportError) opts.onImportError(e);
     });
@@ -2456,7 +2719,11 @@ var GUI = class {
       {
         label: "Export",
         title: "Download the current values as JSON",
-        onClick: () => store.exportFile(name().trim() || selected() || "preset")
+        onClick: () => {
+          const current = store.current.peek();
+          const fallback = store.userNames().includes(current) ? current : "preset";
+          store.exportFile(name().trim() || fallback, store.snapshot());
+        }
       },
       { label: "Import", title: "Load values from a JSON file", onClick: () => fileInput.click() }
     ]);
@@ -2468,11 +2735,16 @@ var GUI = class {
 var gui_default = GUI;
 
 // src/params.js
-var sameType = (a, b) => {
-  if (Array.isArray(a) || Array.isArray(b)) {
-    return Array.isArray(a) && Array.isArray(b) && a.length === b.length;
+var fits = (value, fallback) => {
+  if (Array.isArray(fallback)) {
+    return Array.isArray(value) && value.length === fallback.length && value.every((item, i) => fits(item, fallback[i]));
   }
-  return typeof a === typeof b;
+  if (Array.isArray(value)) return false;
+  if (typeof fallback === "number") {
+    return typeof value === "number" && (Number.isFinite(value) || !Number.isFinite(fallback));
+  }
+  if (isHexColor(fallback)) return isHexColor(value);
+  return typeof value === typeof fallback;
 };
 function coerce(raw, fallback) {
   if (typeof fallback === "number") {
@@ -2493,7 +2765,8 @@ function coerce(raw, fallback) {
 }
 function readStorage(key) {
   try {
-    return JSON.parse(localStorage.getItem(key)) || {};
+    const value = JSON.parse(localStorage.getItem(key));
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   } catch {
     return {};
   }
@@ -2537,15 +2810,16 @@ function createParams(defaults, options = {}) {
     const wanted = (only ? only.includes(key) : true) && !skip.includes(key);
     if (!wanted) return signal(value);
     const custom = interpolate[key];
+    const kind = defaults[key];
     if (custom) return tweened(value, duration, curve, custom);
-    if (typeof value === "number") return tweened(value, duration, curve);
-    if (isHexColor(value)) return tweened(value, duration, curve, mixColors);
-    if (numericArray(value)) return tweened(value, duration, curve, lerpArray);
+    if (typeof kind === "number") return tweened(value, duration, curve);
+    if (isHexColor(kind)) return tweened(value, duration, curve, mixColors);
+    if (numericArray(kind)) return tweened(value, duration, curve, lerpArray);
     return signal(value);
   };
   const params = {};
   for (const key of keys) {
-    const value = key in stored && sameType(stored[key], defaults[key]) ? stored[key] : defaults[key];
+    const value = key in stored && fits(stored[key], defaults[key]) ? stored[key] : defaults[key];
     params[key] = easedSignal(key, value);
   }
   const snapshot = (subset = persisted) => {
@@ -2558,7 +2832,7 @@ function createParams(defaults, options = {}) {
     const applied = [];
     batch(() => {
       for (const [key, value] of Object.entries(values)) {
-        if (!(key in params) || !sameType(value, defaults[key])) continue;
+        if (!(key in params) || !fits(value, defaults[key])) continue;
         params[key].set(value);
         applied.push(key);
       }
@@ -2568,6 +2842,7 @@ function createParams(defaults, options = {}) {
   const reset2 = (subset = keys) => {
     batch(() => subset.forEach((key) => params[key].set(defaults[key])));
   };
+  const atDefault = (key) => String(params[key].target()) === String(defaults[key]);
   let timer = null;
   let flush = () => {
   };
@@ -2576,23 +2851,31 @@ function createParams(defaults, options = {}) {
   if (storageKey) {
     flush = () => {
       clearTimeout(timer);
-      writeStorage(storageKey, snapshot());
+      timer = null;
+      writeStorage(storageKey, snapshot(persisted.filter((key) => !atDefault(key))));
     };
     const schedulePersist = () => {
       clearTimeout(timer);
       timer = setTimeout(flush, delay);
     };
-    const stops = persisted.map(
-      (key) => effect(() => {
-        params[key].target();
-        schedulePersist();
-      })
+    let loaded = false;
+    const stops = untrack(
+      () => persisted.map(
+        (key) => effect(() => {
+          params[key].target();
+          if (loaded) schedulePersist();
+        })
+      )
     );
-    const onHide = () => flush();
+    loaded = true;
+    const onHide = () => {
+      if (timer !== null) flush();
+    };
     const canListen = typeof addEventListener === "function";
     if (canListen) addEventListener("pagehide", onHide);
     stop = () => {
       clearTimeout(timer);
+      timer = null;
       stops.forEach((s) => s());
       if (canListen) removeEventListener("pagehide", onHide);
     };
@@ -2612,7 +2895,10 @@ function createParams(defaults, options = {}) {
         if (params[key].target !== params[key]) params[key].duration = ms;
       }
     },
+    // Drops the save and any write still waiting, so a reload comes back to the defaults.
     $clear: () => {
+      clearTimeout(timer);
+      timer = null;
       if (storageKey) {
         try {
           localStorage.removeItem(storageKey);
@@ -2625,8 +2911,8 @@ function createParams(defaults, options = {}) {
     $toQuery: () => {
       const query = new URLSearchParams();
       for (const key of persisted) {
+        if (atDefault(key)) continue;
         const value = params[key].target();
-        if (sameType(value, defaults[key]) && String(value) === String(defaults[key])) continue;
         query.set(key, Array.isArray(value) ? value.join(",") : String(value));
       }
       return query.toString();
@@ -2659,23 +2945,32 @@ function createPresetStore(params, options = {}) {
     onApply = null
   } = options;
   const subset = params.$persisted.filter((k) => !exclude.includes(k));
-  let user = storageKey ? readStorage(storageKey) : {};
+  const user = Object.assign(/* @__PURE__ */ Object.create(null), storageKey ? readStorage(storageKey) : {});
+  const own = (bag, name) => Object.prototype.hasOwnProperty.call(bag, name);
   const current = signal(customName);
+  const use = (name, values, reported = name) => {
+    const applied = params.$apply(values);
+    current.set(name);
+    if (onApply) onApply(reported, applied);
+    return applied;
+  };
   const store = {
     current,
     builtinNames: () => [customName, ...Object.keys(builtin)],
     userNames: () => Object.keys(user),
     snapshot: () => params.$snapshot(subset),
-    // Takes a preset name (built-in or saved) or a plain object of values.
+    // Takes a built-in or saved preset's name, or an object of values. A built-in wins a shared name.
     apply(nameOrValues) {
       if (nameOrValues === customName) return [];
-      const values = typeof nameOrValues === "string" ? builtin[nameOrValues] || user[nameOrValues] : nameOrValues;
-      if (!values) return [];
-      const applied = params.$apply(values);
-      if (typeof nameOrValues === "string") current.set(nameOrValues);
-      else current.set(customName);
-      if (onApply) onApply(nameOrValues, applied);
-      return applied;
+      const named = typeof nameOrValues === "string";
+      if (named && own(builtin, nameOrValues)) return use(nameOrValues, builtin[nameOrValues]);
+      if (named) return store.load(nameOrValues);
+      if (!nameOrValues) return [];
+      return use(customName, nameOrValues, nameOrValues);
+    },
+    // A saved preset by name, whatever it is called.
+    load(name) {
+      return own(user, name) ? use(name, user[name]) : [];
     },
     markCustom() {
       current.set(customName);
@@ -2690,8 +2985,8 @@ function createPresetStore(params, options = {}) {
       delete user[name];
       if (storageKey) writeStorage(storageKey, user);
     },
-    exportFile(name = "preset") {
-      const values = user[name] || store.snapshot();
+    // Without `values` it is the saved preset of that name, or the current state.
+    exportFile(name = "preset", values = own(user, name) ? user[name] : store.snapshot()) {
       download(`${name}.json`, JSON.stringify(values, null, 2));
     },
     // Accepts both a bare snapshot and a wrapper like { name, params }, since that's what
@@ -2703,9 +2998,11 @@ function createPresetStore(params, options = {}) {
         reader.onload = () => {
           try {
             const parsed = JSON.parse(reader.result);
-            const values = parsed && parsed.params ? parsed.params : parsed;
+            const inner = parsed && parsed.params;
+            const wrapped = !!inner && typeof inner === "object" && !Array.isArray(inner);
+            const values = wrapped ? inner : parsed;
             const applied = store.apply(values);
-            if (parsed && parsed.name) {
+            if (wrapped && typeof parsed.name === "string" && parsed.name) {
               user[parsed.name] = values;
               if (storageKey) writeStorage(storageKey, user);
               current.set(parsed.name);
@@ -2778,11 +3075,12 @@ function createStats({ clock = defaultClock } = {}) {
     const counter = {
       name,
       signal: sig,
-      latest: initial,
       averager,
       // Left for flush() to write, so a frame's worth of measuring costs one signal write and
       // one pass of effects rather than one per counter per call.
-      pending: initial
+      pending: initial,
+      // Set while a total is being built up with add(), for flush() to average once.
+      accumulating: false
     };
     counters.push(counter);
     return counter;
@@ -2850,17 +3148,19 @@ function createStats({ clock = defaultClock } = {}) {
         // `sample`, not `set`: see RESERVED above.
         sample(value) {
           counter.pending = value;
+          counter.accumulating = false;
           counter.averager.push(value);
           return this;
         },
         add(amount = 1) {
           counter.pending += amount;
-          counter.averager.push(counter.pending);
+          counter.accumulating = true;
           return this;
         },
         // Counters that accumulate within a frame have to be cleared at the top of the next.
         clear() {
           counter.pending = 0;
+          counter.accumulating = true;
           return this;
         }
       });
@@ -2870,7 +3170,10 @@ function createStats({ clock = defaultClock } = {}) {
     flush() {
       batch(() => {
         for (const counter of counters) {
-          counter.latest = counter.pending;
+          if (counter.accumulating) {
+            counter.averager.push(counter.pending);
+            counter.accumulating = false;
+          }
           counter.signal.set(counter.averager.read(counter.pending));
         }
       });
